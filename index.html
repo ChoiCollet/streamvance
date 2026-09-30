@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Streamvance - 오디오 & 비디오 스트리밍 플레이어</title>
+  <meta name="description" content="Streamvance - 차세대 오디오 & 비디오 스트리밍 웹 플레이어. 고음질 음원 및 영상 재생, 가사 지원 및 무광고 백그라운드 경험">
+  <meta name="theme-color" content="#030303">
+  
+  <!-- Favicon & PWA -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff0000'><circle cx='12' cy='12' r='10'/><polygon points='10 8 16 12 10 16 10 8' fill='%23ffffff'/></svg>">
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- 데스크톱 사이드바 네비게이션 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <a href="#" class="brand-link" id="brand-home-link">
+          <div class="brand-logo">
+            <svg viewBox="0 0 24 24" class="yt-music-logo">
+              <circle cx="12" cy="12" r="11" fill="#ff0000"/>
+              <circle cx="12" cy="12" r="6" fill="#030303"/>
+              <polygon points="10 8.5 15 12 10 15.5 10 8.5" fill="#ffffff"/>
+            </svg>
+          </div>
+          <span class="brand-name">Streamvance</span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-nav="home">
+          <i data-lucide="home"></i>
+          <span>홈</span>
+        </button>
+        <button class="nav-item" data-nav="explore">
+          <i data-lucide="compass"></i>
+          <span>둘러보기</span>
+        </button>
+        <button class="nav-item" data-nav="library">
+          <i data-lucide="library"></i>
+          <span>보관함</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- 플레이리스트 / 빠른 링크 -->
+      <div class="sidebar-playlists">
+        <div class="sidebar-section-header">
+          <span>새 플레이리스트</span>
+          <button class="icon-btn-subtle" id="btn-add-local-file" title="내 PC 음원 추가">
+            <i data-lucide="folder-plus"></i>
+          </button>
+        </div>
+        <button class="btn-create-playlist" id="btn-create-playlist">
+          <i data-lucide="plus"></i>
+          <span>새 재생목록</span>
+        </button>
+        
+        <ul class="playlist-list" id="sidebar-playlist-list">
+          <li class="playlist-item active" data-filter="all">
+            <i data-lucide="heart" class="accent-icon"></i>
+            <span>좋아요 표시한 음악</span>
+          </li>
+          <li class="playlist-item" data-filter="recent">
+            <i data-lucide="clock"></i>
+            <span>최근 재생한 음악</span>
+          </li>
+          <li class="playlist-item" data-filter="chill">
+            <i data-lucide="coffee"></i>
+            <span>Lo-Fi & Chill 믹스</span>
+          </li>
+          <li class="playlist-item" data-filter="workout">
+            <i data-lucide="zap"></i>
+            <span>Energy Workout 믹스</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 로컬 파일 업로드 숨은 인풋 -->
+      <input type="file" id="local-audio-input" accept="audio/*" multiple style="display: none;">
+    </aside>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="main-content" id="main-content">
+      <!-- 상단 헤더 -->
+      <header class="top-header" id="top-header">
+        <div class="header-left">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 토글">
+            <i data-lucide="menu"></i>
+          </button>
+          
+          <!-- 검색창 -->
+          <div class="search-container">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="search-input" placeholder="곡, 아티스트, 앨범 검색..." autocomplete="off">
+            <button class="search-clear-btn" id="search-clear-btn" style="display: none;">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="header-right">
+          <!-- 음원 업로드 버튼 -->
+          <button class="header-action-btn" id="header-upload-btn" title="로컬 음원 추가 (MP3/WAV)">
+            <i data-lucide="upload-cloud"></i>
+            <span class="btn-text">내 음악 추가</span>
+          </button>
+
+          <!-- 유저 프로필 아바타 -->
+          <div class="user-avatar" id="user-avatar" title="사용자 계정">
+            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="Avatar">
+          </div>
+        </div>
+      </header>
+
+      <!-- 뷰 컨테이너: 홈 / 탐색 / 보관함 / 검색결과 -->
+      <div class="content-scroll-area" id="content-scroll-area">
+        
+        <!-- 1. 홈 뷰 -->
+        <section class="view-panel active" id="view-home">
+          <!-- 무드 필터 칩 바 -->
+          <div class="mood-chips-container">
+            <button class="mood-chip active" data-mood="all">전체</button>
+            <button class="mood-chip" data-mood="chill">휴식 & 칠</button>
+            <button class="mood-chip" data-mood="energy">에너지 충전</button>
+            <button class="mood-chip" data-mood="focus">집중 & 코딩</button>
+            <button class="mood-chip" data-mood="workout">운동 & 파워</button>
+            <button class="mood-chip" data-mood="synth">신스웨이브</button>
+          </div>
+
+          <!-- 빠른 선곡 (Quick Picks) -->
+          <div class="section-container">
+            <div class="section-header">
+              <div>
+                <span class="section-subtitle">이 노래로 뮤직 스테이션 시작하기</span>
+                <h2 class="section-title">빠른 선곡 (Quick Picks)</h2>
+              </div>
+              <div class="section-controls">
+                <button class="icon-circle-btn" id="btn-play-all-quick" title="모두 재생">
+                  <i data-lucide="play"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div class="quick-picks-grid" id="quick-picks-list">
+              <!-- JS 동적 렌더링 -->
+            </div>
+          </div>
+
+          <!-- 추천 플레이리스트 & 앨범 -->
+          <div class="section-container">
+            <div class="section-header">
+              <div>
+                <span class="section-subtitle">오늘의 분위기를 위한</span>
+                <h2 class="section-title">맞춤 믹스 & 추천 앨범</h2>
+              </div>
+            </div>
+
+            <div class="cards-horizontal-scroll" id="recommended-albums-list">
+              <!-- JS 동적 렌더링 -->
+            </div>
+          </div>
+
+          <!-- 실시간 인기 트렌딩 차트 -->
+          <div class="section-container">
+            <div class="section-header">
+              <div>
+                <span class="section-subtitle">지금 가장 많이 듣는</span>
+                <h2 class="section-title">실시간 TOP 차트</h2>
+              </div>
+            </div>
+
+            <div class="top-charts-list" id="top-charts-list">
+              <!-- JS 동적 렌더링 -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. 둘러보기(Explore) 뷰 -->
+        <section class="view-panel" id="view-explore">
+          <div class="explore-hero-banner" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.6) 0%, rgba(30, 20, 30, 0.8) 100%), url('https://i.ytimg.com/vi/ekr2nIex040/maxresdefault.jpg') center/cover;">
+            <div class="hero-content">
+              <span class="hero-badge">GLOBAL TOP 1</span>
+              <h1 class="hero-title">ROSÉ & Bruno Mars - APT.</h1>
+              <p class="hero-desc">전 세계를 뒤흔든 중독적인 비트! 로제와 브루노 마스가 선사하는 글로벌 메가 히트 싱글 'APT.'를 지금 들어보세요.</p>
+              <button class="btn-hero-play" id="btn-hero-play">
+                <i data-lucide="play" fill="currentColor"></i>
+                <span>지금 듣기</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="section-container">
+            <h2 class="section-title">분위기 및 장르</h2>
+            <div class="genre-cards-grid" id="genre-grid">
+              <!-- JS 동적 생성 -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. 보관함(Library) 뷰 -->
+        <section class="view-panel" id="view-library">
+          <div class="library-header">
+            <h1 class="library-title">보관함</h1>
+            <div class="library-tabs">
+              <button class="lib-tab active" data-lib="likes">좋아요 표시한 곡 (<span id="likes-count">0</span>)</button>
+              <button class="lib-tab" data-lib="history">최근 재생한 곡</button>
+              <button class="lib-tab" data-lib="local">내 로컬 파일</button>
+            </div>
+          </div>
+
+          <div class="library-content-container" id="library-content">
+            <!-- JS 동적 렌더링 -->
+          </div>
+        </section>
+
+        <!-- 4. 검색 결과 뷰 -->
+        <section class="view-panel" id="view-search">
+          <div class="search-header">
+            <h2 class="section-title">"<span id="search-query-text"></span>" 검색 결과</h2>
+          </div>
+          <div class="search-results-list" id="search-results-list">
+            <!-- JS 동적 렌더링 -->
+          </div>
+        </section>
+
+        <!-- 바닥 공간 확보 (플레이어 바 높이만큼) -->
+        <div class="bottom-spacer"></div>
+      </div>
+    </main>
+
+    <!-- 모바일 하단 네비게이션 탭 바 (화면이 작을 때 노출) -->
+    <nav class="mobile-nav-bar" id="mobile-nav-bar">
+      <button class="mobile-nav-item active" data-nav="home">
+        <i data-lucide="home"></i>
+        <span>홈</span>
+      </button>
+      <button class="mobile-nav-item" data-nav="explore">
+        <i data-lucide="compass"></i>
+        <span>둘러보기</span>
+      </button>
+      <button class="mobile-nav-item" data-nav="library">
+        <i data-lucide="library"></i>
+        <span>보관함</span>
+      </button>
+    </nav>
+
+    <!-- 하단 고정 플레이어 (Bottom Player Bar) -->
+    <footer class="player-bar" id="player-bar">
+      <!-- 진행 바 (상단 마이크로 시크바) -->
+      <div class="player-seek-container" id="player-seek-container">
+        <div class="seek-buffer-bar" id="seek-buffer-bar"></div>
+        <div class="seek-progress-bar" id="seek-progress-bar"></div>
+        <input type="range" class="seek-slider" id="seek-slider" min="0" max="100" value="0" step="0.1">
+      </div>
+
+      <div class="player-bar-inner">
+        <!-- 현재 트랙 정보 (클릭 시 전체 화면 플레이어 열림) -->
+        <div class="player-track-info" id="player-track-info">
+          <div class="player-cover-wrapper">
+            <img src="" alt="Album Cover" id="player-cover-img" class="player-cover-img">
+            <div class="audio-equalizer-bars" id="audio-eq-bars">
+              <span class="bar"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
+            </div>
+          </div>
+          <div class="player-meta">
+            <span class="player-title" id="player-title">곡을 선택해주세요</span>
+            <span class="player-artist" id="player-artist">YouTube Music</span>
+          </div>
+          <button class="btn-like-track" id="btn-like-track" title="좋아요">
+            <i data-lucide="heart"></i>
+          </button>
+        </div>
+
+        <!-- 중앙 재생 컨트롤 버튼들 -->
+        <div class="player-controls">
+          <button class="ctrl-btn" id="btn-shuffle" title="셔플">
+            <i data-lucide="shuffle"></i>
+          </button>
+          <button class="ctrl-btn" id="btn-prev" title="이전 곡 (J)">
+            <i data-lucide="skip-back"></i>
+          </button>
+          <button class="ctrl-btn btn-play-main" id="btn-play-pause" title="재생/일시정지 (스페이스바)">
+            <i data-lucide="play" id="icon-play-pause"></i>
+          </button>
+          <button class="ctrl-btn" id="btn-next" title="다음 곡 (L)">
+            <i data-lucide="skip-forward"></i>
+          </button>
+          <button class="ctrl-btn" id="btn-repeat" title="반복 재생">
+            <i data-lucide="repeat"></i>
+          </button>
+        </div>
+
+        <!-- 우측 볼륨 & 전체화면/큐 토글 -->
+        <div class="player-actions">
+          <span class="player-time-display">
+            <span id="current-time">0:00</span> / <span id="duration-time">0:00</span>
+          </span>
+
+          <div class="volume-container">
+            <button class="ctrl-btn" id="btn-volume-toggle" title="음소거 토글">
+              <i data-lucide="volume-2" id="icon-volume"></i>
+            </button>
+            <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.01" value="0.8">
+          </div>
+
+          <button class="ctrl-btn" id="btn-open-queue" title="재생 대기열 (Queue)">
+            <i data-lucide="list-music"></i>
+          </button>
+
+          <button class="ctrl-btn" id="btn-expand-player" title="전체화면 플레이어">
+            <i data-lucide="chevron-up"></i>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- 전체 화면 플레이어 모달 (Now Playing Full View) -->
+    <div class="full-player-modal" id="full-player-modal">
+      <div class="modal-header">
+        <button class="icon-btn-modal" id="btn-close-full-player" title="닫기">
+          <i data-lucide="chevron-down"></i>
+        </button>
+        
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="up-next">다음 트랙</button>
+          <button class="modal-tab" data-tab="lyrics">가사</button>
+          <button class="modal-tab" data-tab="related">관련 항목</button>
+        </div>
+
+        <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
+          <i data-lucide="more-vertical"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 좌측: 대형 앨범 아트 & 트랙 정보 -->
+        <div class="modal-visual-panel">
+          <div class="modal-album-art-wrap">
+            <img src="" alt="Album Art" id="modal-album-art" class="modal-album-art">
+          </div>
+          <div class="modal-track-info-row">
+            <div class="modal-track-titles">
+              <h1 class="modal-song-title" id="modal-song-title">재생 중인 곡 없음</h1>
+              <p class="modal-song-artist" id="modal-song-artist">YouTube Music</p>
+            </div>
+            <button class="btn-like-modal" id="btn-like-modal">
+              <i data-lucide="heart"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 우측: 탭 컨텐츠 (다음 트랙 / 가사 / 관련 곡) -->
+        <div class="modal-content-panel">
+          <!-- 1) Up Next (재생 대기열) -->
+          <div class="tab-pane active" id="pane-up-next">
+            <div class="queue-header">
+              <div class="queue-meta">
+                <span class="queue-source-title" id="queue-source-title">현재 재생목록</span>
+                <span class="queue-count" id="queue-count">0곡</span>
+              </div>
+              <button class="btn-subtle" id="btn-clear-queue">
+                <i data-lucide="trash-2"></i>
+                <span>대기열 비우기</span>
+              </button>
+            </div>
+            <div class="queue-track-list" id="queue-track-list">
+              <!-- JS 동적 렌더링 -->
+            </div>
+          </div>
+
+          <!-- 2) 가사 (Lyrics) -->
+          <div class="tab-pane" id="pane-lyrics">
+            <div class="lyrics-container" id="lyrics-container">
+              <p class="lyrics-placeholder">가사를 불러오는 중입니다...</p>
+            </div>
+          </div>
+
+          <!-- 3) 관련 항목 (Related) -->
+          <div class="tab-pane" id="pane-related">
+            <div class="related-container" id="related-container">
+              <h3 class="related-subhead">이 곡을 좋아한 사용자가 함께 들은 곡</h3>
+              <div class="related-tracks-list" id="related-tracks-list">
+                <!-- JS 동적 렌더링 -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 토스트 알림 메시지 -->
+    <div class="toast-notification" id="toast-notification"></div>
+  </div>
+
+  <!-- Audio Elements -->
+  <audio id="main-audio" preload="metadata"></audio>
+  <!-- Hidden YouTube IFrame Player -->
+  <div id="youtube-player-hidden" style="position: absolute; width: 1px; height: 1px; opacity: 0.01; pointer-events: none; left: -9999px; bottom: 0;"></div>
+
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <!-- Scripts -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
