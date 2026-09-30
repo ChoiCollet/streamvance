@@ -714,6 +714,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnSyncMinusFast) btnSyncMinusFast.addEventListener('click', () => handleLyricSyncAdjust(-1.0));
   if (btnSyncMinus) btnSyncMinus.addEventListener('click', () => handleLyricSyncAdjust(-0.5));
+
+  const btnSyncMinusFine = document.getElementById('btn-sync-minus-fine');
+  const btnSyncPlusFine = document.getElementById('btn-sync-plus-fine');
+  if (btnSyncMinusFine) btnSyncMinusFine.addEventListener('click', () => handleLyricSyncAdjust(-0.1));
+  if (btnSyncPlusFine) btnSyncPlusFine.addEventListener('click', () => handleLyricSyncAdjust(0.1));
+
   if (btnSyncReset) btnSyncReset.addEventListener('click', () => handleLyricSyncAdjust(0, true));
   if (btnSyncPlus) btnSyncPlus.addEventListener('click', () => handleLyricSyncAdjust(0.5));
   if (btnSyncPlusFast) btnSyncPlusFast.addEventListener('click', () => handleLyricSyncAdjust(1.0));
@@ -735,6 +741,12 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (e.key === '}') {
       e.preventDefault();
       handleLyricSyncAdjust(1.0);
+    } else if (e.key === ',') {
+      e.preventDefault();
+      handleLyricSyncAdjust(-0.1);
+    } else if (e.key === '.') {
+      e.preventDefault();
+      handleLyricSyncAdjust(0.1);
     }
   });
 

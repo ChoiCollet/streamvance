@@ -1172,6 +1172,90 @@ a {
 }
 
 /* ==========================================================================
+   가사 싱크 조절 툴바 (Lyrics Sync Fine-Tune Toolbar)
+   ========================================================================== */
+.lyrics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sync-nudge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.sync-label {
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.3px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.btn-sync-adjust {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.btn-sync-adjust:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.btn-sync-adjust:active {
+  transform: scale(0.95);
+}
+
+/* 0.1초 단위 미세조정 버튼 - 살짝 다른 색상으로 구분 */
+.btn-sync-adjust.btn-sync-fine {
+  background: rgba(255, 180, 0, 0.1);
+  border-color: rgba(255, 180, 0, 0.22);
+  color: rgba(255, 200, 60, 0.85);
+  font-size: 0.68rem;
+  padding: 3px 7px;
+}
+
+.btn-sync-adjust.btn-sync-fine:hover {
+  background: rgba(255, 180, 0, 0.22);
+  color: #ffd740;
+}
+
+/* 현재 오프셋 값 표시 버튼 */
+.btn-sync-adjust.sync-badge-val {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  min-width: 56px;
+  text-align: center;
+  font-size: 0.73rem;
+}
+
+.btn-sync-adjust.sync-badge-val:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ff6b6b;
+}
+
+/* ==========================================================================
    실시간 동기화 가사 (Synced Lyrics with Instrumental Indicators)
    ========================================================================== */
 .lyrics-container {
