@@ -2,14 +2,16 @@
 // Google OAuth & Music Taste Analyzer (AI Music DNA & Smart Recommendations)
 // ==========================================================================
 
+export const DEFAULT_GOOGLE_CLIENT_ID = '498281456710-j65e94rqobf3qih5gc9n0paghipckemb.apps.googleusercontent.com';
+
 export class AuthManager {
   constructor(uiManager, player) {
     this.ui = uiManager;
     this.player = player;
     this.currentUser = null;
-    // 저장된 구글 클라이언트 ID가 있으면 불러오기
+    // 공식 구글 클라이언트 ID 자동 적용
     const savedClientId = localStorage.getItem('streamvance_google_client_id');
-    this.clientId = savedClientId || '';
+    this.clientId = savedClientId || DEFAULT_GOOGLE_CLIENT_ID;
     
     // 로컬 스토리지에서 이전 로그인 세션 복구
     this.loadSession();
@@ -40,6 +42,39 @@ export class AuthManager {
     try {
       localStorage.removeItem('streamvance_user');
     } catch (e) {}
+  }
+
+  // Google Identity Services (GIS) 초기화
+  initGoogleAuth() {
+    if (this.clientId && window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: this.clientId,
+          callback: (response) => {
+            if (response?.credential) {
+              try {
+                const payload = JSON.parse(decodeURIComponent(escape(atob(response.credential.split('.')[1]))));
+                const user = {
+                  id: payload.sub,
+                  name: payload.name || 'Google 사용자',
+                  email: payload.email,
+                  picture: payload.picture,
+                  isGoogle: true,
+                  connectedAt: Date.now()
+                };
+                this.saveSession(user);
+                this.updateUserUI();
+                this.ui.showToast(`환영합니다, ${user.name}님!`);
+                this.closeAuthModal();
+                if (this.onUserLogin) this.onUserLogin(user);
+              } catch (e) {}
+            }
+          }
+        });
+      } catch (err) {
+        console.warn("Google Auth Init Warning:", err);
+      }
+    }
   }
 
   // Google OAuth 리다이렉트 후 반환된 access_token 확인
@@ -83,22 +118,9 @@ export class AuthManager {
     }
   }
 
-  // 공식 Google OAuth 2.0 외부 로그인 페이지로 이동
+  // 공식 Google OAuth 2.0 외부 로그인 페이지로 즉시 이동 (수동 입력 없이 자동 연결)
   launchRealGoogleOAuth(customClientId = '') {
-    const clientId = (customClientId || this.clientId || '').trim();
-    if (!clientId) {
-      const panel = document.getElementById('google-client-config-panel');
-      if (panel) panel.style.display = 'block';
-      const entered = prompt(
-        "공식 Google OAuth 로그인을 실행하려면 Google Cloud Console에서 생성한 OAuth Client ID가 필요합니다.\n\n발급받은 Client ID(예: 12345...apps.googleusercontent.com)를 입력해주세요.\n(입력 없이 바로 사용하시려면 '취소' 후 '게스트로 로그인'을 클릭하세요):"
-      );
-      if (entered && entered.trim()) {
-        this.setClientId(entered.trim());
-        this.launchRealGoogleOAuth(entered.trim());
-      }
-      return;
-    }
-
+    const clientId = (customClientId || this.clientId || DEFAULT_GOOGLE_CLIENT_ID).trim();
     const redirectUri = window.location.origin + window.location.pathname;
     const scope = encodeURIComponent('openid profile email');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=select_account`;
@@ -106,7 +128,7 @@ export class AuthManager {
     this.ui.showToast('Google 공식 로그인 페이지로 이동합니다...');
     setTimeout(() => {
       window.location.href = authUrl;
-    }, 350);
+    }, 250);
   }
 
   // 게스트로 즉시 로그인

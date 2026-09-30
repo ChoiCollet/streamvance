@@ -31,3 +31,6 @@ __pycache__/
 
 # Cloudflare Wrangler
 .wrangler
+
+# Archives
+*.zip

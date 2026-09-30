@@ -255,18 +255,29 @@ a {
 }
 
 .user-profile-avatar-wrap {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   overflow: hidden;
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.user-profile-avatar-wrap:hover {
+  transform: scale(1.08);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .user-profile-avatar-wrap img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  pointer-events: none;
 }
 
 .header-login-btn {
@@ -276,6 +287,14 @@ a {
   font-weight: 600;
   font-size: 0.85rem;
   border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.15s ease;
+}
+
+.header-login-btn:hover {
+  background: #e0e0e0;
 }
 
 /* ==========================================================================

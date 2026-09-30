@@ -620,7 +620,9 @@ document.addEventListener('DOMContentLoaded', () => {
   auth.onUserLogin = () => {
     updatePersonalizedQuickPicks();
   };
-  auth.initGoogleAuth();
+  if (typeof auth.initGoogleAuth === 'function') {
+    auth.initGoogleAuth();
+  }
   auth.updateUserUI();
 
   const btnTasteDna = document.getElementById('btn-taste-dna');
@@ -665,29 +667,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Google Client ID 설정 토글 및 저장
-  const btnToggleClientConfig = document.getElementById('btn-toggle-client-config');
-  const clientConfigPanel = document.getElementById('google-client-config-panel');
-  const googleClientIdInput = document.getElementById('google-client-id-input');
-  const btnSaveClientId = document.getElementById('btn-save-client-id');
-
-  if (btnToggleClientConfig && clientConfigPanel) {
-    btnToggleClientConfig.addEventListener('click', () => {
-      const isHidden = clientConfigPanel.style.display === 'none' || !clientConfigPanel.style.display;
-      clientConfigPanel.style.display = isHidden ? 'block' : 'none';
-      if (isHidden && googleClientIdInput) {
-        googleClientIdInput.value = localStorage.getItem('streamvance_google_client_id') || '';
-      }
-    });
-  }
-
-  if (btnSaveClientId && googleClientIdInput) {
-    btnSaveClientId.addEventListener('click', () => {
-      const id = googleClientIdInput.value.trim();
-      auth.setClientId(id);
-      if (clientConfigPanel) clientConfigPanel.style.display = 'none';
-    });
-  }
 
   // 싫어요 버튼 (피드백 후 다음 곡)
   const btnThumbDown = document.getElementById('btn-thumb-down');
