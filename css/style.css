@@ -111,7 +111,8 @@ a {
   justify-content: space-between;
   padding: 0 24px;
   border-bottom: 1px solid var(--border-subtle);
-  z-index: 100;
+  z-index: 800;
+  position: relative;
   flex-shrink: 0;
 }
 
@@ -119,29 +120,7 @@ a {
   display: flex;
   align-items: center;
   gap: 16px;
-  flex: 1;
-}
-
-.nav-history-btns {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nav-hist-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: #aaa;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.nav-hist-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
 }
 
 .ytm-brand {
@@ -165,12 +144,47 @@ a {
   color: #fff;
 }
 
+/* 상단 중앙 정렬 컨테이너 (왼쪽 화살표 → 홈 둘러보기 보관함 → 검색창) */
+.ytm-header-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex: 1;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.nav-history-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nav-hist-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #d0d0d0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.nav-hist-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 /* 상단 탭 네비게이션 (홈 / 둘러보기 / 보관함) */
 .ytm-top-nav {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: 12px;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .ytm-nav-tab {
@@ -198,9 +212,11 @@ a {
   border-radius: var(--radius-md);
   padding: 0 12px;
   height: 38px;
-  width: 360px;
+  width: 320px;
+  max-width: 360px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  margin-left: 16px;
+  margin: 0;
+  flex-shrink: 1;
   transition: width 0.2s ease, border-color 0.2s ease;
 }
 
@@ -295,6 +311,219 @@ a {
 
 .header-login-btn:hover {
   background: #e0e0e0;
+}
+
+/* ==========================================================================
+   YouTube Music PC Authentic Profile Dropdown Menu (스크린샷 100% 일치)
+   ========================================================================== */
+.user-profile-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 300px;
+  background-color: #212121;
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  padding: 8px 0;
+  z-index: 1001;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.98);
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.user-profile-dropdown.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.dropdown-header-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px 14px 18px;
+}
+
+.dropdown-avatar-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #3ea6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dropdown-avatar-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dropdown-user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.dropdown-user-name {
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-user-email {
+  font-size: 0.8rem;
+  color: #aaaaaa;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-google-link {
+  font-size: 0.82rem;
+  color: #3ea6ff;
+  margin-top: 6px;
+  display: inline-block;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.dropdown-google-link:hover {
+  color: #65b8ff;
+  text-decoration: underline;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 6px 0;
+}
+
+.dropdown-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-menu-item {
+  width: 100%;
+  padding: 11px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #eeeeee;
+  font-size: 0.88rem;
+  font-weight: 400;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dropdown-menu-item i,
+.dropdown-menu-item svg {
+  width: 20px;
+  height: 20px;
+  color: #aaaaaa;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.dropdown-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.dropdown-menu-item:hover i,
+.dropdown-menu-item:hover svg {
+  color: #ffffff;
+}
+
+.dropdown-menu-item.static {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.dropdown-menu-item.static:hover {
+  background: transparent;
+}
+
+.dropdown-menu-item.item-danger {
+  color: #ff5252;
+}
+
+.dropdown-menu-item.item-danger i,
+.dropdown-menu-item.item-danger svg {
+  color: #ff5252;
+}
+
+.dropdown-menu-item.item-danger:hover {
+  background: rgba(255, 82, 82, 0.12);
+  color: #ff7b7b;
+}
+
+/* ==========================================================================
+   YouTube Music PC Personalized Welcome Banner (스크린샷 100% 일치)
+   ========================================================================== */
+.user-welcome-banner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 0 24px 0;
+  animation: fadeInBanner 0.3s ease;
+}
+
+@keyframes fadeInBanner {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.welcome-avatar-wrap {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.welcome-avatar-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.welcome-text-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-subtitle {
+  font-size: 0.88rem;
+  color: #aaaaaa;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.welcome-title {
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.6px;
+  line-height: 1.2;
 }
 
 /* ==========================================================================
@@ -718,19 +947,20 @@ a {
 }
 
 /* ==========================================================================
-   하단 플레이어 바 (YouTube Music PC 스크린샷 100% 일치)
+   하단 플레이어 바 (YouTube Music PC 슬림 & 100% 불투명 솔리드)
    ========================================================================== */
 .player-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: var(--player-height);
-  background: var(--bg-player);
+  height: 62px;
+  background: #0c0c0c !important;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  z-index: 500;
+  z-index: 600;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.6);
 }
 
 /* 최상단 풀폭 레드 진행 바 */
@@ -999,8 +1229,9 @@ a {
 }
 
 /* ==========================================================================
-   Google 정품 스타일 로그인 선택 모달 (Authentic Google Sign-In Chooser)
+   Google 정품 스타일 로그인 모달 & 음악 취향 DNA 리포트 모달
    ========================================================================== */
+.auth-modal,
 .auth-taste-modal {
   display: none;
   position: fixed;
@@ -1010,15 +1241,16 @@ a {
   justify-content: center;
 }
 
+.auth-modal.open,
 .auth-taste-modal.open {
   display: flex;
 }
 
+/* 스크롤 렉 및 버벅임을 방지하기 위해 GPU 부하를 유발하는 backdrop blur 제거 */
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .google-signin-dialog {
@@ -1034,6 +1266,216 @@ a {
   animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   max-height: 85vh;
   overflow-y: auto;
+}
+
+/* 내 음악 취향 DNA 리포트 다이얼로그 (고화질 다크 글래스 카드) */
+.taste-dna-dialog {
+  position: relative;
+  background: #1c1c1e;
+  border-radius: 16px;
+  width: 500px;
+  max-width: 92vw;
+  padding: 26px 24px 28px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  animation: modalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.taste-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.taste-dialog-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.4px;
+}
+
+.taste-header-card {
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.14), rgba(120, 50, 255, 0.14));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.taste-user-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.taste-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+}
+
+.taste-user-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 3px;
+}
+
+.taste-desc {
+  font-size: 0.82rem;
+  color: #b3b3b3;
+  line-height: 1.4;
+}
+
+.taste-stats-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.taste-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.taste-pill.highlight {
+  background: rgba(255, 0, 85, 0.2);
+  color: #ff6b8b;
+  border-color: rgba(255, 0, 85, 0.4);
+}
+
+.taste-section {
+  margin-bottom: 20px;
+}
+
+.taste-subhead {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.taste-subhead i,
+.taste-subhead svg {
+  width: 18px;
+  height: 18px;
+  color: #ff0055;
+}
+
+.genre-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.genre-bar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.genre-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.genre-progress-track {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.genre-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #ff0055, #ff5e3a);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.favorite-artists-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.favorite-artist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #fff;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.favorite-artist-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.favorite-artist-chip i,
+.favorite-artist-chip svg {
+  width: 15px;
+  height: 15px;
+  color: #3ea6ff;
+}
+
+.taste-actions {
+  margin-top: 24px;
+}
+
+.btn-create-taste-mix {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 13px 20px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #ff0055, #ff3b30);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(255, 0, 85, 0.4);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-create-taste-mix:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(255, 0, 85, 0.6);
 }
 
 @keyframes modalPop {
@@ -1207,73 +1649,150 @@ a {
 }
 
 /* ==========================================================================
-   Full Player Modal (Now Playing Full View)
+   Full Player Modal (YouTube Music PC & Mobile Now Playing - 100% Opaque & Theme Glow)
    ========================================================================== */
 .full-player-modal {
-  display: none;
+  display: flex;
   position: fixed;
-  inset: 0;
-  background: #030303;
-  z-index: 600;
+  top: 100vh;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #030303 !important;
+  background-image: linear-gradient(
+    180deg,
+    rgb(var(--track-r, 55), var(--track-g, 35), var(--track-b, 40)) 0%,
+    rgb(calc(var(--track-r, 55) * 0.45), calc(var(--track-g, 35) * 0.45), calc(var(--track-b, 40) * 0.45)) 40%,
+    #0a0a0c 75%,
+    #030303 100%
+  ) !important;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 550;
   flex-direction: column;
   overflow: hidden;
+  transition: top 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, background 0.8s ease;
+}
+
+.btn-modal-dislike-mobile {
+  display: none !important;
+}
+
+.btn-modal-dislike-desktop {
+  display: inline-flex !important;
 }
 
 .full-player-modal.open {
-  display: flex;
+  top: var(--header-height, 64px);
+  bottom: 62px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@keyframes fadeInPlayer {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .modal-header {
-  height: 64px;
-  display: flex;
+  height: 54px;
+  display: none; /* 데스크톱에서는 상단 정품 헤더가 그대로 보이므로 숨김 */
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
-.modal-tabs {
+.modal-header-spacer {
+  flex: 1;
+}
+
+/* 노래 | 동영상 전환 토글 세그먼트 (앨범 아트 바로 위에 완벽 정렬 - 윤하 스크린샷 100% 매칭) */
+.visual-panel-toggle-wrap {
   display: flex;
-  gap: 16px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+  width: 100%;
 }
 
-.modal-tab {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #aaa;
-  padding: 8px 16px;
+.ytm-media-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 3px;
+  border-radius: 9999px;
+  gap: 2px;
 }
 
-.modal-tab.active {
-  color: #fff;
-  border-bottom: 2px solid #fff;
+.media-toggle-btn {
+  padding: 6px 20px;
+  border-radius: 9999px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #aaaaaa;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.media-toggle-btn.active {
+  background: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+
+.media-toggle-btn:hover:not(.active) {
+  color: #ffffff;
 }
 
 .modal-body {
   flex: 1;
   display: flex;
   overflow: hidden;
-  padding: 32px 48px;
-  gap: 48px;
+  padding: 24px 60px 30px 60px;
+  gap: 64px;
+  align-items: flex-start;
+  justify-content: center;
 }
 
+/* 좌측 비주얼 패널 */
 .modal-visual-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  max-width: 480px;
-  margin: 0 auto;
+  max-width: 500px;
+  width: 100%;
 }
 
-.modal-album-art-wrap {
+.stage-media-wrap {
+  position: relative;
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Song 모드: 앨범 커버 */
+.modal-album-art-wrap {
+  position: relative;
+  width: 100%;
   aspect-ratio: 1;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  background: #111;
+  transition: opacity 0.2s ease;
+}
+
+.modal-album-art-wrap.hidden {
+  display: none !important;
 }
 
 .modal-album-art {
@@ -1282,35 +1801,434 @@ a {
   object-fit: cover;
 }
 
-.modal-track-info-row {
+.art-corner-actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
   display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-album-art-wrap:hover .art-corner-actions {
+  opacity: 1;
+}
+
+.art-corner-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.art-corner-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(1.08);
+}
+
+/* Video 모드: 무광고 유튜브 영상 플레이어 */
+.modal-video-wrap:not(.active) {
+  position: fixed !important;
+  right: -9999px !important;
+  bottom: 0 !important;
+  width: 240px !important;
+  height: 140px !important;
+  opacity: 0.001 !important;
+  pointer-events: none !important;
+  z-index: -100 !important;
+}
+
+.modal-video-wrap.active {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 500px !important;
+  aspect-ratio: 16 / 9 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
+  background: #000;
+}
+
+.modal-video-wrap.active iframe,
+.modal-video-wrap.active #youtube-player-hidden {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  display: block !important;
+}
+
+.modal-track-info-row {
+  display: none; /* 데스크톱에서는 하단 플레이어 바에 곡 정보가 표시되므로 스크린샷과 동일하게 숨김 */
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin-top: 24px;
+  margin-top: 18px;
+}
+
+.modal-track-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
 }
 
 .modal-song-title {
   font-size: 1.45rem;
   font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .modal-song-artist {
   font-size: 0.95rem;
-  color: #aaa;
+  color: #aaaaaa;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+.modal-track-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 16px;
+}
+
+.btn-like-modal {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: #aaaaaa;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-like-modal:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.btn-like-modal.active {
+  color: #ff0055;
+  background: rgba(255, 0, 85, 0.18);
+}
+
+/* 모바일 전용 시크바 & 컨트롤 (기본 데스크톱에서는 숨김) */
+.mobile-player-controls-wrap {
+  display: none;
+}
+
+.mobile-drawer-drag-bar {
+  display: none;
+}
+
+/* 우측 탭 & 컨텐츠 패널 */
 .modal-content-panel {
   flex: 1;
-  overflow-y: auto;
+  height: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-right-tabs {
+  display: flex;
+  gap: 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.modal-right-tabs .modal-tab {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #717171;
+  padding: 10px 0;
+  position: relative;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  transition: color 0.15s ease;
+}
+
+.modal-right-tabs .modal-tab.active {
+  color: #ffffff;
+}
+
+.modal-right-tabs .modal-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: #ffffff;
 }
 
 .tab-pane {
+  flex: 1;
+  overflow-y: auto;
   display: none;
 }
 
 .tab-pane.active {
-  display: block;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 실시간 동기화 가사 툴바 & 싱크 미세조정 */
+.lyrics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 16px 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.sync-nudge-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sync-label {
+  font-size: 0.74rem;
+  color: #999;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.btn-sync-adjust {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: #ccc;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-sync-adjust:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.sync-badge-val {
+  background: rgba(255, 0, 0, 0.18);
+  border-color: rgba(255, 0, 0, 0.35);
+  color: #ff6b6b;
+  min-width: 48px;
+  text-align: center;
+  font-family: monospace;
+}
+
+.sync-badge-val:hover {
+  background: rgba(255, 0, 0, 0.32);
+  color: #ffffff;
+}
+
+/* 실시간 동기화 가사 컨테이너 */
+.lyrics-container {
+  flex: 1;
+  padding: 24px 16px 180px 16px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lyric-line {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.42);
+  line-height: 1.7;
+  cursor: pointer;
+  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1), font-size 0.2s ease, transform 0.2s ease;
+  user-select: text;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.lyric-line:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lyric-line.active {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.35);
+  transform: scale(1.02);
+  transform-origin: left center;
+}
+
+.lyric-line.instrumental {
+  color: #ff0055;
+  font-style: italic;
+  opacity: 0.85;
+  font-size: 1.05rem;
+}
+
+.lyric-line.instrumental.active {
+  font-size: 1.35rem;
+  color: #ff3377;
+}
+
+/* 모바일 3-dots 바텀시트 메뉴 (Screenshot 2 매칭) */
+.track-more-sheet {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.track-more-sheet.open {
+  display: flex;
+}
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.sheet-content {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: #212121;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 18px 20px 28px 20px;
+  z-index: 1;
+  box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.85);
+  animation: sheetSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.sheet-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.sheet-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheet-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-artist {
+  font-size: 0.82rem;
+  color: #aaa;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-reactions {
+  display: flex;
+  gap: 8px;
+}
+
+.sheet-reaction-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sheet-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 12px 0;
+}
+
+.sheet-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sheet-action-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+  color: #eee;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.sheet-action-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 /* Toast */
@@ -1358,7 +2276,7 @@ a {
     color: #fff;
   }
 
-  .ytm-top-nav, .nav-history-btns, .ytm-search-box {
+  .ytm-header-center, .ytm-top-nav, .nav-history-btns, .ytm-search-box {
     display: none;
   }
 
@@ -1424,9 +2342,252 @@ a {
     color: #fff;
   }
 
+  .full-player-modal {
+    z-index: 900 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    background-color: #1a0f0d !important;
+    background-image: linear-gradient(
+      180deg,
+      rgb(var(--track-r, 62), var(--track-g, 32), var(--track-b, 28)) 0%,
+      rgb(calc(var(--track-r, 62) * 0.85), calc(var(--track-g, 32) * 0.85), calc(var(--track-b, 28) * 0.85)) 45%,
+      rgb(calc(var(--track-r, 62) * 0.65), calc(var(--track-g, 32) * 0.65), calc(var(--track-b, 28) * 0.65)) 100%
+    ) !important;
+  }
+
+  .full-player-modal.open {
+    top: 0 !important;
+    bottom: 0 !important;
+  }
+
+  body.player-modal-open .player-bar,
+  body.player-modal-open .mobile-nav-bar {
+    display: none !important;
+  }
+
+  .modal-header {
+    height: 54px;
+    padding: 0 16px;
+  }
+
+  .modal-body {
+    flex-direction: column;
+    padding: 4px 20px 76px 20px;
+    gap: 12px;
+    overflow-y: auto;
+    justify-content: flex-start;
+  }
+
+  .modal-visual-panel {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .stage-media-wrap {
+    max-width: min(78vw, 320px);
+    width: 100%;
+  }
+
+  .modal-album-art-wrap {
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
+  }
+
+  .modal-track-info-row {
+    margin-top: 18px;
+    width: 100%;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .btn-modal-dislike-mobile {
+    display: inline-flex !important;
+    width: 36px;
+    height: 36px;
+    color: #ffffff;
+  }
+
+  .btn-modal-dislike-desktop {
+    display: none !important;
+  }
+
+  .modal-track-titles {
+    flex: 1;
+    text-align: center;
+    padding: 0 8px;
+    min-width: 0;
+  }
+
+  .modal-song-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+
+  .modal-song-artist {
+    font-size: 0.88rem;
+    color: #b0b0b0;
+    margin-top: 2px;
+  }
+
+  /* 모바일 프로그레스 바 & 컨트롤러 */
+  .mobile-player-controls-wrap {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin-top: 18px;
+    padding: 0 4px;
+  }
+
+  .mobile-seek-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .mobile-time {
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.65);
+    min-width: 32px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-seek-bar-track {
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 2px;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .mobile-seek-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #ffffff;
+    border-radius: 2px;
+    width: 0%;
+  }
+
+  .mobile-seek-bar-fill::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+
+  .mobile-seek-input {
+    position: absolute;
+    inset: -8px 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 5;
+  }
+
+  .mobile-ctrl-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 16px;
+    padding: 0 4px;
+  }
+
+  .mobile-ctrl-btn {
+    width: 44px;
+    height: 44px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .mobile-btn-play-pause {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  .mobile-btn-play-pause:hover {
+    transform: scale(1.05);
+  }
+
+  /* 모바일 하단 슬라이드업 시트 (Screenshot 2 매칭) */
+  .modal-content-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: rgb(calc(var(--track-r, 62) * 0.5), calc(var(--track-g, 32) * 0.5), calc(var(--track-b, 28) * 0.5)) !important;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    z-index: 950;
+    transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    max-width: 100%;
+  }
+
+  .modal-content-panel.drawer-expanded {
+    height: 76vh !important;
+    background: #141414 !important;
+  }
+
+  .mobile-drawer-drag-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    width: 100%;
+    cursor: pointer;
+  }
+
+  .drawer-handle-pill {
+    width: 38px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  .modal-right-tabs {
+    justify-content: space-around;
+    gap: 0;
+    padding: 2px 16px 8px 16px;
+    margin-bottom: 4px;
+  }
+
+  .lyrics-container {
+    padding: 20px 16px 140px 16px;
+  }
+
+  .lyric-line.active {
+    font-size: 1.45rem;
+  }
+
   .player-bar {
     bottom: 56px;
-    height: 60px;
+    height: 58px;
     z-index: 150;
   }
 
@@ -1440,10 +2601,5 @@ a {
 
   .content-scroll-area {
     padding: 16px 16px 140px 16px;
-  }
-
-  .modal-body {
-    flex-direction: column;
-    padding: 16px;
   }
 }

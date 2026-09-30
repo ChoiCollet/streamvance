@@ -15,6 +15,8 @@ export class AuthManager {
     
     // 로컬 스토리지에서 이전 로그인 세션 복구
     this.loadSession();
+    // UI 동기화
+    this.updateUserUI();
     // Google OAuth 콜백 감지
     this.checkOAuthCallback();
   }
@@ -65,7 +67,7 @@ export class AuthManager {
                 this.saveSession(user);
                 this.updateUserUI();
                 this.ui.showToast(`환영합니다, ${user.name}님!`);
-                this.closeAuthModal();
+                this.closeSignInModal();
                 if (this.onUserLogin) this.onUserLogin(user);
               } catch (e) {}
             }
@@ -121,7 +123,12 @@ export class AuthManager {
   // 공식 Google OAuth 2.0 외부 로그인 페이지로 즉시 이동 (수동 입력 없이 자동 연결)
   launchRealGoogleOAuth(customClientId = '') {
     const clientId = (customClientId || this.clientId || DEFAULT_GOOGLE_CLIENT_ID).trim();
-    const redirectUri = window.location.origin + window.location.pathname;
+    
+    // index.html 등 서브 파일명을 제거하고 일관된 루트 URI로 정규화
+    let cleanPath = window.location.pathname.replace(/\/index\.html$/i, '');
+    if (!cleanPath.endsWith('/')) cleanPath += '/';
+    const redirectUri = window.location.origin + cleanPath;
+    
     const scope = encodeURIComponent('openid profile email');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=select_account`;
 
@@ -144,7 +151,7 @@ export class AuthManager {
     this.saveSession(user);
     this.updateUserUI();
     this.ui.showToast("게스트 계정으로 로그인되었습니다!");
-    this.closeAuthModal();
+    this.closeSignInModal();
     if (this.onUserLogin) this.onUserLogin(user);
   }
 
@@ -158,49 +165,118 @@ export class AuthManager {
 
   logout() {
     this.clearSession();
+    this.closeProfileDropdown();
+    this.closeTasteModal();
     this.updateUserUI();
     this.ui.showToast('로그아웃되었습니다.');
   }
 
-  // 상단 프로필 UI 업데이트
+  // 상단 프로필 UI 업데이트 (헤더 아바타, 드롭다운 메뉴, 환영 배너 동기화)
   updateUserUI() {
     const avatarImg = document.getElementById('user-avatar-img') || document.querySelector('#user-profile-wrap img');
     const loginBtn = document.getElementById('header-login-btn');
     const profileWrap = document.getElementById('user-profile-wrap');
-    const logoutBtn = document.getElementById('btn-logout');
+
+    // 드롭다운 요소
+    const dropdownAvatarImg = document.getElementById('dropdown-avatar-img');
+    const dropdownUserName = document.getElementById('dropdown-user-name');
+    const dropdownUserEmail = document.getElementById('dropdown-user-email');
+
+    // 개인화 환영 배너 (YouTube Music PC 스크린샷 100% 일치)
+    const welcomeBanner = document.getElementById('user-welcome-banner');
+    const welcomeAvatarImg = document.getElementById('welcome-avatar-img');
+    const welcomeUserName = document.getElementById('welcome-user-name');
 
     if (this.currentUser) {
-      if (avatarImg) avatarImg.src = this.currentUser.picture;
+      const userPic = this.currentUser.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';
+      const userName = this.currentUser.name || '사용자';
+      const userEmail = this.currentUser.email || '';
+
+      if (avatarImg) avatarImg.src = userPic;
       if (loginBtn) loginBtn.style.display = 'none';
       if (profileWrap) profileWrap.style.display = 'flex';
-      if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+
+      if (dropdownAvatarImg) dropdownAvatarImg.src = userPic;
+      if (dropdownUserName) dropdownUserName.textContent = userName;
+      if (dropdownUserEmail) dropdownUserEmail.textContent = userEmail;
+
+      if (welcomeBanner) {
+        welcomeBanner.style.display = 'flex';
+        if (welcomeAvatarImg) welcomeAvatarImg.src = userPic;
+        if (welcomeUserName) welcomeUserName.textContent = userName;
+      }
     } else {
-      if (avatarImg) avatarImg.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';
       if (loginBtn) loginBtn.style.display = 'inline-flex';
-      if (profileWrap) profileWrap.style.display = 'flex';
-      if (logoutBtn) logoutBtn.style.display = 'none';
+      if (profileWrap) profileWrap.style.display = 'none';
+      if (welcomeBanner) welcomeBanner.style.display = 'none';
+      this.closeProfileDropdown();
     }
   }
 
-  // 모달 열기/닫기
-  openAuthModal() {
-    const modal = document.getElementById('auth-taste-modal');
+  // 드롭다운 메뉴 열기/닫기
+  toggleProfileDropdown(force) {
+    const dropdown = document.getElementById('user-profile-dropdown');
+    if (!dropdown) return;
+    const isCurrentlyOpen = dropdown.classList.contains('open');
+    const shouldOpen = (typeof force === 'boolean') ? force : !isCurrentlyOpen;
+    if (shouldOpen) {
+      dropdown.classList.add('open');
+    } else {
+      dropdown.classList.remove('open');
+    }
+  }
+
+  closeProfileDropdown() {
+    const dropdown = document.getElementById('user-profile-dropdown');
+    if (dropdown) dropdown.classList.remove('open');
+  }
+
+  // 모달 제어
+  openSignInModal() {
+    this.closeProfileDropdown();
+    const modal = document.getElementById('google-signin-modal');
+    if (modal) modal.classList.add('open');
+  }
+
+  closeSignInModal() {
+    const modal = document.getElementById('google-signin-modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  openTasteModal() {
+    this.closeProfileDropdown();
+    const modal = document.getElementById('taste-dna-modal');
     if (modal) {
       modal.classList.add('open');
       this.renderTasteAnalysis();
     }
   }
 
-  closeAuthModal() {
-    const modal = document.getElementById('auth-taste-modal');
+  closeTasteModal() {
+    const modal = document.getElementById('taste-dna-modal');
     if (modal) modal.classList.remove('open');
+  }
+
+  // 하위 호환성 래퍼
+  openAuthModal() {
+    if (this.currentUser) {
+      this.toggleProfileDropdown();
+    } else {
+      this.openSignInModal();
+    }
+  }
+
+  closeAuthModal() {
+    this.closeSignInModal();
+    this.closeTasteModal();
+    this.closeProfileDropdown();
   }
 
   // ==========================================================================
   // 음악 취향 분석 엔진 (Music DNA Analyzer)
   // ==========================================================================
-  analyzeUserTaste(allTracks) {
-    const likedTracks = allTracks.filter(t => this.ui.likedTrackIds.has(t.id));
+  analyzeUserTaste(allTracks = []) {
+    const likedTracks = this.ui.likedTracksMap ? Array.from(this.ui.likedTracksMap.values()) : [];
     const historyTracks = this.ui.playHistory || [];
     
     // 선호 곡 풀 (좋아요한 곡 가중치 2, 재생 히스토리 가중치 1)
@@ -262,8 +338,7 @@ export class AuthManager {
     const container = document.getElementById('taste-analysis-content');
     if (!container) return;
 
-    const allTracks = this.player.queue || [];
-    const stats = this.analyzeUserTaste(allTracks);
+    const stats = this.analyzeUserTaste();
 
     const genreLabelMap = {
       pop: 'K-POP & Global Pop',

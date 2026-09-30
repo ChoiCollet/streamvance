@@ -28,21 +28,16 @@
 <body>
   <div id="app" class="app-container">
     
-    <!-- 상단 Streamvance 헤더 -->
+    <!-- 상단 Streamvance 헤더 (YouTube Music PC 표준 레이아웃: 좌측 로고, 중앙 정렬 [← → 홈 둘러보기 보관함 검색창], 우측 프로필) -->
     <header class="ytm-header" id="top-header">
+      <!-- 1. 좌측 끝: Streamvance 브랜드 로고 및 이름 -->
       <div class="ytm-header-left">
-        <!-- 이전/다음 브라우징 화살표 -->
-        <div class="nav-history-btns">
-          <button class="nav-hist-btn" id="btn-hist-back" title="뒤로가기">
-            <i data-lucide="chevron-left"></i>
-          </button>
-          <button class="nav-hist-btn" id="btn-hist-forward" title="앞으로가기">
-            <i data-lucide="chevron-right"></i>
-          </button>
-        </div>
+        <!-- 모바일 햄버거 메뉴 토글 (작은 화면 전용) -->
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 토글">
+          <i data-lucide="menu"></i>
+        </button>
 
-        <!-- Streamvance 브랜드 로고 -->
-        <a href="#" class="ytm-brand" id="brand-home-link">
+        <a href="#" class="ytm-brand" id="brand-home-link" title="홈으로 이동">
           <div class="ytm-logo-circle">
             <svg viewBox="0 0 24 24" width="24" height="24">
               <circle cx="12" cy="12" r="11" fill="#ff0000"/>
@@ -52,13 +47,25 @@
           </div>
           <span class="ytm-brand-name">Streamvance</span>
         </a>
+      </div>
 
-        <!-- 모바일 햄버거 메뉴 토글 (작은 화면 전용) -->
-        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="메뉴 토글">
-          <i data-lucide="menu"></i>
-        </button>
+      <!-- 2. 중앙 정렬 컨테이너: 왼쪽 화살표, 홈, 둘러보기, 보관함, 검색창 순서 -->
+      <div class="ytm-header-center">
+        <!-- 이전/다음 브라우징 화살표 -->
+        <div class="nav-history-btns">
+          <button class="nav-hist-btn" id="btn-hist-back" title="뒤로가기">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <button class="nav-hist-btn" id="btn-hist-forward" title="앞으로가기">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+        </div>
 
-        <!-- 상단 중앙 네비게이션 링크 (홈 / 둘러보기 / 보관함) -->
+        <!-- 상단 네비게이션 링크 (홈 / 둘러보기 / 보관함) -->
         <nav class="ytm-top-nav">
           <button class="ytm-nav-tab active" data-nav="home">홈</button>
           <button class="ytm-nav-tab" data-nav="explore">둘러보기</button>
@@ -77,7 +84,8 @@
         </div>
       </div>
 
-      <div class="ytm-header-right">
+      <!-- 3. 우측 끝: 캐스트, 업로드, 프로필 아바타 / 로그인 버튼 -->
+      <div class="ytm-header-right" style="position: relative;">
         <!-- 캐스트 아이콘 -->
         <button class="ytm-action-icon-btn" title="기기에 연결">
           <i data-lucide="cast"></i>
@@ -88,13 +96,52 @@
           <i data-lucide="upload-cloud"></i>
         </button>
 
-        <!-- 구글 로그인 / 프로필 아바타 -->
-        <div class="user-profile-avatar-wrap" id="user-profile-wrap" title="Google 계정 및 음악 취향 DNA">
-          <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="User Profile" id="user-avatar-img">
+        <!-- 구글 로그인 / 프로필 아바타 버튼 -->
+        <div class="user-profile-avatar-wrap" id="user-profile-wrap" title="계정 및 설정" style="display: none;">
+          <img src="" alt="User Profile" id="user-avatar-img">
         </div>
-        <button class="header-login-btn" id="header-login-btn" style="display: none;">
-          Google 로그인
+        <button class="header-login-btn" id="header-login-btn">
+          <i data-lucide="log-in" style="width: 16px; height: 16px; margin-right: 6px;"></i>
+          <span>로그인</span>
         </button>
+
+        <!-- YouTube Music PC 스타일 정품 프로필 드롭다운 메뉴 (스크린샷 100% 일치) -->
+        <div class="user-profile-dropdown" id="user-profile-dropdown">
+          <div class="dropdown-header-user">
+            <div class="dropdown-avatar-wrap">
+              <img src="" id="dropdown-avatar-img" alt="User Avatar">
+            </div>
+            <div class="dropdown-user-meta">
+              <div class="dropdown-user-name" id="dropdown-user-name">최서원</div>
+              <div class="dropdown-user-email" id="dropdown-user-email">cswonx0515@gmail.com</div>
+              <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" class="dropdown-google-link">Google 계정 관리</a>
+            </div>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-menu-list">
+            <button class="dropdown-menu-item" id="menu-view-taste">
+              <i data-lucide="sparkles"></i>
+              <span>내 음악 취향 DNA 리포트</span>
+            </button>
+            <button class="dropdown-menu-item" id="menu-view-history">
+              <i data-lucide="history"></i>
+              <span>시청 / 감상 기록</span>
+            </button>
+            <button class="dropdown-menu-item" id="menu-view-likes">
+              <i data-lucide="thumbs-up"></i>
+              <span>좋아요 표시한 음악</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-menu-item static">
+              <i data-lucide="shield-check"></i>
+              <span>Streamvance 프리미엄</span>
+            </div>
+            <button class="dropdown-menu-item item-danger" id="menu-logout">
+              <i data-lucide="log-out"></i>
+              <span>로그아웃</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- 숨은 로컬 오디오 파일 인풋 -->
@@ -139,6 +186,17 @@
         <!-- 1. 홈 뷰 (Home View) -->
         <section class="view-panel active" id="view-home">
           
+          <!-- YouTube Music PC 스타일 개인화 환영 배너 (스크린샷 100% 일치) -->
+          <div class="user-welcome-banner" id="user-welcome-banner" style="display: none;">
+            <div class="welcome-avatar-wrap">
+              <img src="" id="welcome-avatar-img" alt="Avatar">
+            </div>
+            <div class="welcome-text-wrap">
+              <span class="welcome-subtitle">시작을 위한 음악</span>
+              <h1 class="welcome-title"><span id="welcome-user-name">사용자</span>님, 환영합니다.</h1>
+            </div>
+          </div>
+
           <!-- 섹션 1: 빠른 선곡 (YouTube Music 스크린샷 100% 일치) -->
           <div class="section-container">
             <div class="section-header">
@@ -379,48 +437,129 @@
       </div>
     </footer>
 
-    <!-- 가사 & 재생 대기열 전체화면 모달 (Now Playing Full View) -->
+    <!-- 가사 & 재생 대기열 전체화면 모달 (YouTube Music PC Now Playing - Screenshot 1 100% 일치) -->
     <div class="full-player-modal" id="full-player-modal">
       <div class="modal-header">
-        <button class="icon-btn-modal" id="btn-close-full-player" title="닫기">
+        <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기">
           <i data-lucide="chevron-down"></i>
         </button>
-        
-        <div class="modal-tabs">
-          <button class="modal-tab active" data-tab="up-next">다음 트랙</button>
-          <button class="modal-tab" data-tab="lyrics">가사</button>
-          <button class="modal-tab" data-tab="related">관련 항목</button>
-        </div>
-
+        <div class="modal-header-spacer"></div>
         <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
           <i data-lucide="more-vertical"></i>
         </button>
       </div>
 
       <div class="modal-body">
-        <!-- 좌측: 대형 앨범 아트 & 트랙 정보 -->
+        <!-- 좌측: 비주얼 무대 (노래 | 동영상 토글 + 앨범 아트 OR 공식 영상 - 윤하 스크린샷 100% 매칭) -->
         <div class="modal-visual-panel">
-          <div class="modal-album-art-wrap">
-            <img src="" alt="Album Art" id="modal-album-art" class="modal-album-art">
+          <!-- 노래 | 동영상 전환 토글 버튼 (앨범 아트 바로 위에 완벽 정렬) -->
+          <div class="visual-panel-toggle-wrap">
+            <div class="ytm-media-toggle-pill" id="media-mode-toggle">
+              <button class="media-toggle-btn active" data-mode="song" id="btn-mode-song">
+                <i data-lucide="music" style="width: 14px; height: 14px; margin-right: 5px;"></i>
+                <span>노래</span>
+              </button>
+              <button class="media-toggle-btn" data-mode="video" id="btn-mode-video">
+                <i data-lucide="video" style="width: 14px; height: 14px; margin-right: 5px;"></i>
+                <span>동영상</span>
+              </button>
+            </div>
           </div>
+
+          <div class="stage-media-wrap" id="stage-media-wrap">
+            <!-- Song 모드: 고화질 정사각 앨범 커버 (우측 상단 PIP/전체화면 도구) -->
+            <div class="modal-album-art-wrap" id="modal-album-art-wrap">
+              <img src="" alt="Album Art" id="modal-album-art" class="modal-album-art">
+              <div class="art-corner-actions">
+                <button class="art-corner-btn" id="btn-toggle-pip" title="미니 플레이어">
+                  <i data-lucide="picture-in-picture-2"></i>
+                </button>
+                <button class="art-corner-btn" id="btn-toggle-stage-fs" title="전체화면">
+                  <i data-lucide="maximize"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Video 모드: 광고 없이 실시간 가사와 완벽 동기화되는 유튜브 플레이어 -->
+            <div class="modal-video-wrap" id="modal-video-wrap">
+              <div id="youtube-player-hidden"></div>
+            </div>
+          </div>
+
+          <!-- 하단 트랙 정보 (모바일: [👎] [곡 정보] [👍], PC: [곡 정보] [👎 👍]) -->
           <div class="modal-track-info-row">
+            <button class="btn-like-modal btn-modal-dislike-mobile" id="btn-modal-dislike-mobile" title="싫어요">
+              <i data-lucide="thumbs-down"></i>
+            </button>
             <div class="modal-track-titles">
               <h1 class="modal-song-title" id="modal-song-title">재생 중인 곡 없음</h1>
               <p class="modal-song-artist" id="modal-song-artist">YouTube Music</p>
             </div>
-            <button class="btn-like-modal" id="btn-like-modal" title="좋아요">
-              <i data-lucide="thumbs-up"></i>
-            </button>
+            <div class="modal-track-actions">
+              <button class="btn-like-modal btn-modal-dislike-desktop" id="btn-modal-dislike" title="싫어요">
+                <i data-lucide="thumbs-down"></i>
+              </button>
+              <button class="btn-like-modal" id="btn-like-modal" title="좋아요">
+                <i data-lucide="thumbs-up"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 모바일 전용 시크바 & 재생 컨트롤러 (Screenshot 2 100% 매칭) -->
+          <div class="mobile-player-controls-wrap">
+            <div class="mobile-seek-row">
+              <span class="mobile-time" id="mobile-current-time">0:00</span>
+              <div class="mobile-seek-bar-track" id="mobile-seek-bar-track">
+                <div class="mobile-seek-bar-fill" id="mobile-seek-bar-fill"></div>
+                <input type="range" class="mobile-seek-input" id="mobile-seek-input" min="0" max="100" value="0" step="0.1">
+              </div>
+              <span class="mobile-time" id="mobile-duration-time">0:00</span>
+            </div>
+
+            <div class="mobile-ctrl-actions-row">
+              <button class="mobile-ctrl-btn" id="btn-mobile-shuffle" title="셔플">
+                <i data-lucide="shuffle"></i>
+              </button>
+              <button class="mobile-ctrl-btn" id="btn-mobile-prev" title="이전 곡">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                  <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+                </svg>
+              </button>
+              <button class="mobile-btn-play-pause" id="btn-mobile-play" title="재생/일시정지">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" id="svg-mobile-play">
+                  <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                </svg>
+              </button>
+              <button class="mobile-ctrl-btn" id="btn-mobile-next" title="다음 곡">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                  <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+                </svg>
+              </button>
+              <button class="mobile-ctrl-btn" id="btn-mobile-repeat" title="반복">
+                <i data-lucide="repeat"></i>
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- 우측: 탭 컨텐츠 (대기열 / 실시간 정밀 싱크 가사 / 관련 곡) -->
-        <div class="modal-content-panel">
+        <!-- 우측: 탭 컨텐츠 (UP NEXT / LYRICS / RELATED - Screenshot 1 100% 일치) -->
+        <div class="modal-content-panel" id="modal-content-panel">
+          <div class="mobile-drawer-drag-bar" id="mobile-drawer-drag-bar">
+            <span class="drawer-handle-pill"></span>
+          </div>
+          <div class="modal-right-tabs">
+            <button class="modal-tab" data-tab="up-next">다음 트랙</button>
+            <button class="modal-tab active" data-tab="lyrics">가사</button>
+            <button class="modal-tab" data-tab="related">관련 항목</button>
+          </div>
+
           <!-- 1) Up Next (재생 대기열) -->
-          <div class="tab-pane active" id="pane-up-next">
+          <div class="tab-pane" id="pane-up-next">
             <div class="queue-header">
               <div class="queue-meta">
-                <span class="queue-source-title">현재 재생목록</span>
+                <span class="queue-source-title">현재 재생 대기열</span>
                 <span class="queue-count" id="queue-count">0곡</span>
               </div>
               <button class="btn-subtle" id="btn-clear-queue">
@@ -431,8 +570,21 @@
             <div class="queue-track-list" id="queue-track-list"></div>
           </div>
 
-          <!-- 2) 가사 (Lyrics - 전주/간주 고려한 0.01초 정밀 싱크) -->
-          <div class="tab-pane" id="pane-lyrics">
+          <!-- 2) 가사 (Lyrics - 전주/간주 고려한 0.01초 정밀 싱크 대형 타이포그래피 & 실시간 싱크 미세조정) -->
+          <div class="tab-pane active" id="pane-lyrics">
+            <div class="lyrics-toolbar" id="lyrics-toolbar">
+              <div class="sync-nudge-wrap" title="뮤직비디오 인트로 드라마나 대화로 인한 싱크 차이를 즉시 조정합니다 (자동 저장)">
+                <span class="sync-label">
+                  <i data-lucide="sliders-horizontal" style="width: 13px; height: 13px; margin-right: 4px;"></i>
+                  싱크 조절:
+                </span>
+                <button class="btn-sync-adjust" id="btn-sync-minus-fast" title="1초 빠르게 (단축키: {)">-1.0s</button>
+                <button class="btn-sync-adjust" id="btn-sync-minus" title="0.5초 빠르게 (단축키: [)">-0.5s</button>
+                <button class="btn-sync-adjust sync-badge-val" id="btn-sync-reset" title="싱크 0초로 초기화"><span id="sync-offset-display">±0.0s</span></button>
+                <button class="btn-sync-adjust" id="btn-sync-plus" title="0.5초 늦게 (단축키: ])">+0.5s</button>
+                <button class="btn-sync-adjust" id="btn-sync-plus-fast" title="1초 늦게 (단축키: })">+1.0s</button>
+              </div>
+            </div>
             <div class="lyrics-container" id="lyrics-container">
               <p class="lyrics-placeholder">가사를 불러오는 중입니다...</p>
             </div>
@@ -449,13 +601,13 @@
       </div>
     </div>
 
-    <!-- 구글 정식 디자인 계정 선택 모달 (Authentic Google Sign-In Chooser) -->
-    <div class="auth-taste-modal" id="auth-taste-modal">
-      <div class="modal-backdrop" id="auth-modal-backdrop"></div>
+    <!-- 1. 구글 정식 로그인 모달 (미로그인 상태에서 [로그인] 클릭 시) -->
+    <div class="auth-modal" id="google-signin-modal">
+      <div class="modal-backdrop" id="signin-modal-backdrop"></div>
       <div class="google-signin-dialog">
         <div class="google-dialog-header">
           <!-- Google 정품 로고 -->
-          <svg viewBox="0 0 48 48" width="36" height="36" class="google-dialog-logo">
+          <svg viewBox="0 0 48 48" width="38" height="38" class="google-dialog-logo">
             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
             <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
             <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
@@ -463,13 +615,12 @@
           </svg>
           <h2 class="google-dialog-title">Google 계정으로 로그인</h2>
           <p class="google-dialog-subtitle">Streamvance(으)로 이동</p>
-          <button class="auth-modal-close" id="btn-close-auth-modal">
+          <button class="auth-modal-close" id="btn-close-signin-modal">
             <i data-lucide="x"></i>
           </button>
         </div>
 
         <div class="google-dialog-body">
-          <!-- 1. Google 공식 OAuth 로그인 버튼 (외부 실제 구글 로그인 창으로 이동) -->
           <div class="google-dialog-actions" style="margin-bottom: 12px;">
             <button class="btn-google-next" id="btn-google-oauth-launch" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 20px; font-size: 0.95rem; font-weight: 600; border-radius: 24px; background: #fff; color: #1f1f1f; border: 1px solid #747775; cursor: pointer;">
               <svg viewBox="0 0 48 48" width="20" height="20">
@@ -486,19 +637,86 @@
             <span>또는</span>
           </div>
 
-          <!-- 2. 게스트로 로그인 (단 하나의 간편 버튼) -->
           <button class="btn-guest-login" id="btn-guest-login" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 20px; font-size: 0.95rem; font-weight: 600; border-radius: 24px; background: rgba(255, 255, 255, 0.08); color: #fff; border: 1px solid rgba(255, 255, 255, 0.15); cursor: pointer; transition: background 0.2s;">
             <i data-lucide="user"></i>
             <span>게스트로 로그인</span>
           </button>
+        </div>
+      </div>
+    </div>
 
-          <button class="btn-logout" id="btn-logout" style="display: none; margin-top: 14px;">
-            <i data-lucide="log-out"></i>
-            <span>로그아웃</span>
+    <!-- 2. 내 음악 취향 DNA 리포트 모달 (드롭다운 메뉴에서 클릭 시 표시) -->
+    <div class="auth-modal" id="taste-dna-modal">
+      <div class="modal-backdrop" id="taste-modal-backdrop"></div>
+      <div class="taste-dna-dialog">
+        <div class="taste-dialog-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="sparkles" style="color: #ff0055; width: 22px; height: 22px;"></i>
+            <h2 class="taste-dialog-title">음악 취향 DNA 리포트</h2>
+          </div>
+          <button class="auth-modal-close" id="btn-close-taste-modal">
+            <i data-lucide="x"></i>
           </button>
+        </div>
+        <div class="taste-analysis-content" id="taste-analysis-content">
+          <!-- JS 렌더링 -->
+        </div>
+      </div>
+    </div>
 
-          <!-- 실시간 음악 취향 분석 컨텐츠 -->
-          <div class="taste-analysis-content" id="taste-analysis-content" style="margin-top: 16px;"></div>
+    <!-- 모바일 / PC 트랙 더보기 팝업 바텀시트 (Screenshot 2 100% 매칭) -->
+    <div class="track-more-sheet" id="track-more-sheet">
+      <div class="sheet-backdrop" id="sheet-backdrop"></div>
+      <div class="sheet-content">
+        <div class="sheet-header">
+          <img src="" id="sheet-cover-img" alt="Cover" class="sheet-cover">
+          <div class="sheet-meta">
+            <div class="sheet-title" id="sheet-track-title">곡 제목</div>
+            <div class="sheet-artist" id="sheet-track-artist">아티스트 • 시간</div>
+          </div>
+          <div class="sheet-reactions">
+            <button class="sheet-reaction-btn" id="sheet-btn-dislike" title="싫어요">
+              <i data-lucide="thumbs-down"></i>
+            </button>
+            <button class="sheet-reaction-btn" id="sheet-btn-like" title="좋아요">
+              <i data-lucide="thumbs-up"></i>
+            </button>
+          </div>
+        </div>
+        <div class="sheet-divider"></div>
+        <div class="sheet-actions-list">
+          <button class="sheet-action-item" id="sheet-act-radio">
+            <i data-lucide="radio"></i>
+            <span>뮤직 스테이션 시작</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-next">
+            <i data-lucide="list-plus"></i>
+            <span>다음 동영상으로 재생</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-queue">
+            <i data-lucide="plus-circle"></i>
+            <span>목록에 추가</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-library">
+            <i data-lucide="folder-plus"></i>
+            <span>보관함에 추가</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-download">
+            <i data-lucide="download"></i>
+            <span>오프라인 저장</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-playlist">
+            <i data-lucide="list-music"></i>
+            <span>재생목록에 추가</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-taste">
+            <i data-lucide="sparkles"></i>
+            <span>내 음악 취향 DNA 보기</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-share">
+            <i data-lucide="share-2"></i>
+            <span>공유</span>
+          </button>
         </div>
       </div>
     </div>
@@ -509,8 +727,6 @@
 
   <!-- Audio Elements -->
   <audio id="main-audio" preload="metadata"></audio>
-  <!-- Hidden YouTube IFrame Player (모바일 오디오 자동재생 차단 방지를 위한 fixed 포지셔닝) -->
-  <div id="youtube-player-hidden" style="position: fixed; right: 0; bottom: 0; width: 160px; height: 160px; opacity: 0.001; pointer-events: none; z-index: -100;"></div>
 
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>

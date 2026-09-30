@@ -2,14 +2,46 @@
 // UI Rendering, Interactions, and View Management (YouTube Music PC 100% Match)
 // ==========================================================================
 
+import { sampleTracks } from './data.js';
+
 export class UIManager {
   constructor(player) {
     this.player = player;
     this.currentView = 'home';
-    this.likedTrackIds = new Set(['track-hypeboy', 'track-blue-flame', 'track-apt', 'track-supernova']);
-    this.playHistory = [];
-    this.localFiles = [];
     this._lastActiveLyricIndex = -1;
+
+    // 좋아요 표시한 음악 영구 저장 및 Map 관리
+    this.likedTracksMap = new Map();
+    try {
+      const storedLikes = JSON.parse(localStorage.getItem('streamvance_liked_tracks') || '[]');
+      if (Array.isArray(storedLikes) && storedLikes.length > 0) {
+        storedLikes.forEach(t => {
+          if (t && t.id) this.likedTracksMap.set(t.id, t);
+        });
+      } else {
+        ['track-hypeboy', 'track-blue-flame', 'track-apt', 'track-supernova'].forEach(id => {
+          const t = sampleTracks.find(st => st.id === id);
+          if (t) this.likedTracksMap.set(t.id, t);
+        });
+      }
+    } catch (e) {
+      ['track-hypeboy', 'track-blue-flame', 'track-apt', 'track-supernova'].forEach(id => {
+        const t = sampleTracks.find(st => st.id === id);
+        if (t) this.likedTracksMap.set(t.id, t);
+      });
+    }
+    this.likedTrackIds = new Set(this.likedTracksMap.keys());
+
+    // 시청 / 감상 기록 영구 저장 및 관리
+    this.playHistory = [];
+    try {
+      const storedHist = JSON.parse(localStorage.getItem('streamvance_play_history') || '[]');
+      if (Array.isArray(storedHist) && storedHist.length > 0) {
+        this.playHistory = storedHist;
+      }
+    } catch (e) {}
+
+    this.localFiles = [];
 
     // DOM Elements Cache
     this.dom = {
@@ -47,6 +79,7 @@ export class UIManager {
       queueList: document.getElementById('queue-track-list'),
       queueCount: document.getElementById('queue-count'),
       lyricsContainer: document.getElementById('lyrics-container'),
+      syncOffsetDisplay: document.getElementById('sync-offset-display'),
       relatedList: document.getElementById('related-tracks-list'),
       
       // Containers
@@ -101,23 +134,31 @@ export class UIManager {
 
   toggleLike(track) {
     if (!track) return;
-    if (this.likedTrackIds.has(track.id)) {
+    if (this.likedTracksMap.has(track.id)) {
+      this.likedTracksMap.delete(track.id);
       this.likedTrackIds.delete(track.id);
       this.showToast(`'${track.title}' 좋아요 취소됨`);
     } else {
+      this.likedTracksMap.set(track.id, track);
       this.likedTrackIds.add(track.id);
       this.showToast(`'${track.title}' 좋아요 표시한 음악에 추가됨`);
     }
+    try {
+      localStorage.setItem('streamvance_liked_tracks', JSON.stringify(Array.from(this.likedTracksMap.values())));
+    } catch (e) {}
+
     this.updateLikeButtons(track.id);
     this.updateLikesCount();
     if (this.currentView === 'library') {
-      this.renderLibrary('likes', this.player.queue);
+      const activeTab = document.querySelector('.lib-tab.active');
+      const tabType = activeTab ? activeTab.getAttribute('data-lib') : 'likes';
+      this.renderLibrary(tabType);
     }
   }
 
   updateLikesCount() {
     if (this.dom.likesCount) {
-      this.dom.likesCount.textContent = this.likedTrackIds.size;
+      this.dom.likesCount.textContent = this.likedTracksMap.size;
     }
   }
 
@@ -237,13 +278,13 @@ export class UIManager {
     `).join('');
   }
 
-  // 6. 보관함 렌더링
-  renderLibrary(tabType, allTracks = []) {
+  // 6. 보관함 렌더링 (좋아요 표시한 곡 & 시청/감상 기록 100% 실시간 반영)
+  renderLibrary(tabType = 'likes', allTracks = []) {
     if (!this.dom.libraryContent) return;
     let targetTracks = [];
 
     if (tabType === 'likes') {
-      targetTracks = allTracks.filter(t => this.likedTrackIds.has(t.id));
+      targetTracks = Array.from(this.likedTracksMap.values());
     } else if (tabType === 'history') {
       targetTracks = this.playHistory;
     } else if (tabType === 'local') {
@@ -251,11 +292,24 @@ export class UIManager {
     }
 
     if (targetTracks.length === 0) {
+      let emptyMsg = '아직 보관된 음악이 없습니다.';
+      let emptySub = '좋아하는 곡에 좋아요를 누르거나 음악 파일을 추가해보세요.';
+      let icon = 'music';
+      if (tabType === 'likes') {
+        emptyMsg = '좋아요 표시한 음악이 없습니다.';
+        emptySub = '음악을 들으며 엄지척(좋아요)을 눌러 나만의 보관함을 만들어보세요.';
+        icon = 'thumbs-up';
+      } else if (tabType === 'history') {
+        emptyMsg = '시청 / 감상 기록이 없습니다.';
+        emptySub = '음악을 재생하면 여기에 자동으로 기록되어 언제든 다시 들을 수 있습니다.';
+        icon = 'history';
+      }
+
       this.dom.libraryContent.innerHTML = `
-        <div style="padding: 48px 16px; text-align: center; color: var(--text-muted);">
-          <i data-lucide="music" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"></i>
-          <p style="font-size: 1.1rem; font-weight: 600;">아직 보관된 음악이 없습니다.</p>
-          <p style="font-size: 0.88rem; margin-top: 6px;">좋아하는 곡에 좋아요를 누르거나 음악 파일을 추가해보세요.</p>
+        <div style="padding: 60px 16px; text-align: center; color: var(--text-muted);">
+          <i data-lucide="${icon}" style="width: 48px; height: 48px; margin-bottom: 14px; opacity: 0.5;"></i>
+          <p style="font-size: 1.15rem; font-weight: 600; color: #fff;">${emptyMsg}</p>
+          <p style="font-size: 0.88rem; margin-top: 6px;">${emptySub}</p>
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
@@ -264,29 +318,42 @@ export class UIManager {
 
     this.dom.libraryContent.innerHTML = `
       <div class="quick-picks-grid-ytm" style="grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));">
-        ${targetTracks.map(track => `
-          <div class="track-row-card" data-track-id="${track.id}">
-            <div class="track-row-cover">
-              <img src="${track.cover}" alt="${track.title}" loading="lazy">
-              <div class="cover-play-overlay">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <polygon points="6 4 20 12 6 20 6 4"></polygon>
-                </svg>
+        ${targetTracks.map(track => {
+          const isCurrent = this.player.getCurrentTrack()?.id === track.id;
+          const isLiked = this.likedTrackIds.has(track.id);
+          return `
+            <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
+              <div class="track-row-cover">
+                <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+                <div class="cover-play-overlay">
+                  ${isCurrent && this.player.isPlaying 
+                    ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
+                    : '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>'
+                  }
+                </div>
+              </div>
+              <div class="track-row-info">
+                <div class="track-row-title">${track.title}</div>
+                <div class="track-row-artist">${track.artist} • ${track.album || ''}</div>
+              </div>
+              <span class="track-row-duration">${this.formatTime(track.duration)}</span>
+              <div class="track-row-actions">
+                <button class="btn-track-action btn-inline-like ${isLiked ? 'liked' : ''}" data-action="like" title="좋아요">
+                  <i data-lucide="thumbs-up"></i>
+                </button>
+                <button class="btn-track-action" data-action="queue" title="대기열에 추가">
+                  <i data-lucide="list-plus"></i>
+                </button>
               </div>
             </div>
-            <div class="track-row-info">
-              <div class="track-row-title">${track.title}</div>
-              <div class="track-row-artist">${track.artist}</div>
-            </div>
-            <span class="track-row-duration">${this.formatTime(track.duration)}</span>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // 7. 대기열 렌더링
+  // 7. 대기열 렌더링 (윤하 스크린샷 100% 매칭: 재생 중인 곡 스피커 아이콘 & 하이라이트)
   renderQueue(queue, currentIndex) {
     if (!this.dom.queueList) return;
     if (this.dom.queueCount) {
@@ -301,29 +368,35 @@ export class UIManager {
     this.dom.queueList.innerHTML = queue.map((track, index) => {
       const isPlaying = (index === currentIndex);
       return `
-        <div class="track-row-card ${isPlaying ? 'playing' : ''}" data-queue-index="${index}">
-          <div class="track-row-cover" style="width: 42px; height: 42px;">
+        <div class="track-row-card queue-card ${isPlaying ? 'playing active' : ''}" data-queue-index="${index}">
+          <div class="track-row-cover" style="width: 44px; height: 44px; position: relative;">
             <img src="${track.cover}" alt="${track.title}">
-            <div class="cover-play-overlay" style="opacity: ${isPlaying ? '1' : ''};">
-              ${isPlaying && this.player.isPlaying 
-                ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
-                : '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>'
-              }
-            </div>
+            ${isPlaying ? `
+              <div class="queue-speaker-overlay" style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; color: #fff;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" stroke-width="2" fill="none"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="2" fill="none"></path>
+                </svg>
+              </div>
+            ` : `
+              <div class="cover-play-overlay">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+              </div>
+            `}
           </div>
           <div class="track-row-info">
-            <div class="track-row-title" style="font-size: 0.9rem;">${track.title}</div>
-            <div class="track-row-artist" style="font-size: 0.78rem;">${track.artist}</div>
+            <div class="track-row-title" style="font-weight: ${isPlaying ? '700' : '500'}; font-size: 0.92rem;">${track.title}</div>
+            <div class="track-row-artist" style="font-size: 0.8rem; color: #aaa;">${track.artist}</div>
           </div>
-          <span class="track-row-duration">${this.formatTime(track.duration)}</span>
-          <button class="btn-track-action" data-action="remove-queue" data-index="${index}" title="삭제">
+          <span class="track-row-duration" style="font-size: 0.82rem; color: #888;">${this.formatTime(track.duration)}</span>
+          <button class="btn-track-action" data-action="remove-queue" data-index="${index}" title="대기열에서 삭제">
             <i data-lucide="x"></i>
           </button>
         </div>
       `;
     }).join('');
 
-    if (window.lucide) window.lucide.createIcons();
   }
 
   // 8. 가사(Lyrics) 렌더링 및 동기화 (전주/간주 정확히 반영)
@@ -341,9 +414,35 @@ export class UIManager {
     this._lastActiveLyricIndex = -1;
   }
 
-  renderLyrics(lyrics) {
+  updateLyricsOffsetDisplay(offset = 0) {
+    const el = this.dom.syncOffsetDisplay || document.getElementById('sync-offset-display');
+    if (!el) return;
+    const num = parseFloat(offset) || 0;
+    if (Math.abs(num) < 0.05) {
+      el.textContent = '±0.0s';
+    } else {
+      el.textContent = `${num > 0 ? '+' : ''}${num.toFixed(1)}s`;
+    }
+  }
+
+  refreshLyricTimes(lyrics) {
+    if (!this.dom.lyricsContainer || !Array.isArray(lyrics)) return;
+    const lines = this.dom.lyricsContainer.querySelectorAll('.lyric-line');
+    lines.forEach((el, idx) => {
+      if (lyrics[idx]) {
+        el.setAttribute('data-time', lyrics[idx].time);
+        el.setAttribute('title', `${this.formatTime(lyrics[idx].time)}로 이동하기`);
+      }
+    });
+  }
+
+  renderLyrics(lyrics, offset = null) {
     if (!this.dom.lyricsContainer) return;
     this._lastActiveLyricIndex = -1;
+
+    const currentTrack = this.player.getCurrentTrack();
+    const currentOffset = (offset !== null) ? offset : (currentTrack?.lyricsOffset || 0);
+    this.updateLyricsOffsetDisplay(currentOffset);
 
     if (!lyrics || lyrics.length === 0) {
       this.dom.lyricsContainer.innerHTML = `
@@ -495,9 +594,23 @@ export class UIManager {
 
     this.updateLikeButtons(track.id);
 
-    if (!this.playHistory.find(t => t.id === track.id)) {
-      this.playHistory.unshift(track);
-      if (this.playHistory.length > 20) this.playHistory.pop();
+    // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관
+    const existingIndex = this.playHistory.findIndex(t => t.id === track.id || (t.videoId && t.videoId === track.videoId));
+    if (existingIndex >= 0) {
+      this.playHistory.splice(existingIndex, 1);
+    }
+    this.playHistory.unshift(track);
+    if (this.playHistory.length > 50) this.playHistory.pop();
+    try {
+      localStorage.setItem('streamvance_play_history', JSON.stringify(this.playHistory));
+    } catch (e) {}
+
+    // 보관함의 최근 재생한 곡 탭을 보고 있다면 실시간 갱신
+    if (this.currentView === 'library') {
+      const activeTab = document.querySelector('.lib-tab.active');
+      if (activeTab && activeTab.getAttribute('data-lib') === 'history') {
+        this.renderLibrary('history');
+      }
     }
   }
 
