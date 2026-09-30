@@ -35,6 +35,12 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(results)
             return
 
+        # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts
+        if parsed.path == '/api/charts':
+            results = self.search_youtube('2026 K-POP 인기 차트 TOP 50')
+            self.send_json(results)
+            return
+
         # 일반 정적 파일 서빙
         return super().do_GET()
 
@@ -113,10 +119,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                                 'mood': "all",
                                 'duration': duration_sec,
                                 'cover': cover,
-                                'lyrics': [
-                                    { 'time': 0, 'text': f"[{title} 재생 중]" },
-                                    { 'time': 8, 'text': f"아티스트: {channel}" }
-                                ],
+                                'lyrics': [],
                                 'isLiked': False
                             })
                             if len(items) >= 25:

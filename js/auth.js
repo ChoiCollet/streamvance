@@ -1,0 +1,340 @@
+// ==========================================================================
+// Google OAuth & Music Taste Analyzer (AI Music DNA & Smart Recommendations)
+// ==========================================================================
+
+export class AuthManager {
+  constructor(uiManager, player) {
+    this.ui = uiManager;
+    this.player = player;
+    this.currentUser = null;
+    // 저장된 구글 클라이언트 ID가 있으면 불러오기
+    const savedClientId = localStorage.getItem('streamvance_google_client_id');
+    this.clientId = savedClientId || '';
+    
+    // 로컬 스토리지에서 이전 로그인 세션 복구
+    this.loadSession();
+    // Google OAuth 콜백 감지
+    this.checkOAuthCallback();
+  }
+
+  loadSession() {
+    try {
+      const saved = localStorage.getItem('streamvance_user');
+      if (saved) {
+        this.currentUser = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn("Failed to load user session", e);
+    }
+  }
+
+  saveSession(user) {
+    this.currentUser = user;
+    try {
+      localStorage.setItem('streamvance_user', JSON.stringify(user));
+    } catch (e) {}
+  }
+
+  clearSession() {
+    this.currentUser = null;
+    try {
+      localStorage.removeItem('streamvance_user');
+    } catch (e) {}
+  }
+
+  // Google OAuth 리다이렉트 후 반환된 access_token 확인
+  checkOAuthCallback() {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get('access_token');
+      if (accessToken) {
+        window.history.replaceState(null, '', window.location.pathname);
+        this.fetchGoogleUserProfile(accessToken);
+      }
+    }
+  }
+
+  // Google API로부터 실제 로그인한 사용자의 프로필 정보 수신
+  async fetchGoogleUserProfile(accessToken) {
+    try {
+      this.ui.showToast('Google 인증 완료! 계정 정보를 연동 중입니다...');
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (res.ok) {
+        const profile = await res.json();
+        const user = {
+          id: profile.sub,
+          name: profile.name || 'Google 사용자',
+          email: profile.email,
+          picture: profile.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(profile.email || 'user')}`,
+          isGoogle: true,
+          connectedAt: Date.now()
+        };
+        this.saveSession(user);
+        this.updateUserUI();
+        this.ui.showToast(`환영합니다, ${user.name}님! Google 로그인이 완료되었습니다.`);
+        if (this.onUserLogin) this.onUserLogin(user);
+      }
+    } catch (e) {
+      console.error("Google userinfo fetch error:", e);
+      this.ui.showToast('Google 계정 정보를 가져오는 중 오류가 발생했습니다.');
+    }
+  }
+
+  // 공식 Google OAuth 2.0 외부 로그인 페이지로 이동
+  launchRealGoogleOAuth(customClientId = '') {
+    const clientId = (customClientId || this.clientId || '').trim();
+    if (!clientId) {
+      const panel = document.getElementById('google-client-config-panel');
+      if (panel) panel.style.display = 'block';
+      const entered = prompt(
+        "공식 Google OAuth 로그인을 실행하려면 Google Cloud Console에서 생성한 OAuth Client ID가 필요합니다.\n\n발급받은 Client ID(예: 12345...apps.googleusercontent.com)를 입력해주세요.\n(입력 없이 바로 사용하시려면 '취소' 후 '게스트로 로그인'을 클릭하세요):"
+      );
+      if (entered && entered.trim()) {
+        this.setClientId(entered.trim());
+        this.launchRealGoogleOAuth(entered.trim());
+      }
+      return;
+    }
+
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scope = encodeURIComponent('openid profile email');
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=select_account`;
+
+    this.ui.showToast('Google 공식 로그인 페이지로 이동합니다...');
+    setTimeout(() => {
+      window.location.href = authUrl;
+    }, 350);
+  }
+
+  // 게스트로 즉시 로그인
+  loginAsGuest() {
+    const user = {
+      id: "guest-" + Date.now(),
+      name: "게스트 사용자",
+      email: "guest@streamvance.io",
+      picture: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
+      isGoogle: false,
+      connectedAt: Date.now()
+    };
+    this.saveSession(user);
+    this.updateUserUI();
+    this.ui.showToast("게스트 계정으로 로그인되었습니다!");
+    this.closeAuthModal();
+    if (this.onUserLogin) this.onUserLogin(user);
+  }
+
+  setClientId(newId) {
+    this.clientId = newId;
+    try {
+      localStorage.setItem('streamvance_google_client_id', newId);
+    } catch (e) {}
+    this.ui.showToast("Google OAuth Client ID가 저장되었습니다.");
+  }
+
+  logout() {
+    this.clearSession();
+    this.updateUserUI();
+    this.ui.showToast('로그아웃되었습니다.');
+  }
+
+  // 상단 프로필 UI 업데이트
+  updateUserUI() {
+    const avatarImg = document.getElementById('user-avatar-img') || document.querySelector('#user-profile-wrap img');
+    const loginBtn = document.getElementById('header-login-btn');
+    const profileWrap = document.getElementById('user-profile-wrap');
+    const logoutBtn = document.getElementById('btn-logout');
+
+    if (this.currentUser) {
+      if (avatarImg) avatarImg.src = this.currentUser.picture;
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (profileWrap) profileWrap.style.display = 'flex';
+      if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+    } else {
+      if (avatarImg) avatarImg.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';
+      if (loginBtn) loginBtn.style.display = 'inline-flex';
+      if (profileWrap) profileWrap.style.display = 'flex';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    }
+  }
+
+  // 모달 열기/닫기
+  openAuthModal() {
+    const modal = document.getElementById('auth-taste-modal');
+    if (modal) {
+      modal.classList.add('open');
+      this.renderTasteAnalysis();
+    }
+  }
+
+  closeAuthModal() {
+    const modal = document.getElementById('auth-taste-modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  // ==========================================================================
+  // 음악 취향 분석 엔진 (Music DNA Analyzer)
+  // ==========================================================================
+  analyzeUserTaste(allTracks) {
+    const likedTracks = allTracks.filter(t => this.ui.likedTrackIds.has(t.id));
+    const historyTracks = this.ui.playHistory || [];
+    
+    // 선호 곡 풀 (좋아요한 곡 가중치 2, 재생 히스토리 가중치 1)
+    const genreScore = {};
+    const artistScore = {};
+    const moodScore = {};
+
+    const processTrack = (track, weight = 1) => {
+      if (!track) return;
+      // 장르
+      const g = track.genre || 'pop';
+      genreScore[g] = (genreScore[g] || 0) + weight;
+      // 아티스트
+      const a = track.artist || 'Unknown';
+      artistScore[a] = (artistScore[a] || 0) + weight;
+      // 무드
+      const m = track.mood || 'energy';
+      moodScore[m] = (moodScore[m] || 0) + weight;
+    };
+
+    likedTracks.forEach(t => processTrack(t, 2));
+    historyTracks.forEach(t => processTrack(t, 1));
+
+    // 기본 시드(아직 활동이 적을 때)
+    if (Object.keys(genreScore).length === 0) {
+      genreScore['pop'] = 4;
+      genreScore['dance'] = 3;
+      genreScore['rock'] = 2;
+      artistScore['aespa (에스파)'] = 3;
+      artistScore['NewJeans (뉴진스)'] = 3;
+      artistScore['로제 (ROSÉ), Bruno Mars'] = 2;
+      moodScore['energy'] = 5;
+      moodScore['chill'] = 3;
+    }
+
+    const totalGenreScore = Object.values(genreScore).reduce((a, b) => a + b, 0);
+    const sortedGenres = Object.entries(genreScore)
+      .map(([genre, count]) => ({ genre, percent: Math.round((count / totalGenreScore) * 100) }))
+      .sort((a, b) => b.percent - a.percent);
+
+    const sortedArtists = Object.entries(artistScore)
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4);
+
+    const topMood = Object.entries(moodScore).sort((a, b) => b[1] - a[1])[0]?.[0] || 'energy';
+
+    return {
+      genres: sortedGenres,
+      artists: sortedArtists,
+      topMood: topMood,
+      likedCount: likedTracks.length,
+      historyCount: historyTracks.length
+    };
+  }
+
+  // 취향 분석 화면 렌더링
+  renderTasteAnalysis() {
+    const container = document.getElementById('taste-analysis-content');
+    if (!container) return;
+
+    const allTracks = this.player.queue || [];
+    const stats = this.analyzeUserTaste(allTracks);
+
+    const genreLabelMap = {
+      pop: 'K-POP & Global Pop',
+      dance: '댄스 & 일렉트로닉',
+      rock: '모던 록 & 밴드 사운드',
+      rnb: 'R&B & 소울',
+      hiphop: '힙합 & 트랩',
+      ballad: '감성 발라드'
+    };
+
+    const moodLabelMap = {
+      energy: '에너지 & 활기찬 비트 ⚡',
+      chill: '편안한 칠 & 휴식 ☕',
+      focus: '깊은 몰입 & 집중 🎧',
+      workout: '파워풀 운동 & 러닝 🔥'
+    };
+
+    container.innerHTML = `
+      <div class="taste-header-card">
+        <div class="taste-user-badge">
+          <img src="${this.currentUser?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}" class="taste-avatar" alt="User">
+          <div>
+            <h3 class="taste-user-name">${this.currentUser?.name || '게스트'}님의 음악 DNA</h3>
+            <p class="taste-desc">최근 감상 패턴과 좋아요 곡을 기반으로 실시간 분석한 맞춤 취향 리포트입니다.</p>
+          </div>
+        </div>
+        <div class="taste-stats-pills">
+          <span class="taste-pill">좋아요 ${stats.likedCount}곡</span>
+          <span class="taste-pill">감상 기록 ${stats.historyCount}곡</span>
+          <span class="taste-pill highlight">${moodLabelMap[stats.topMood] || stats.topMood}</span>
+        </div>
+      </div>
+
+      <div class="taste-section">
+        <h4 class="taste-subhead"><i data-lucide="pie-chart"></i> 선호 장르 분포</h4>
+        <div class="genre-bars">
+          ${stats.genres.slice(0, 4).map(g => `
+            <div class="genre-bar-item">
+              <div class="genre-bar-label">
+                <span>${genreLabelMap[g.genre] || g.genre.toUpperCase()}</span>
+                <span>${g.percent}%</span>
+              </div>
+              <div class="genre-progress-track">
+                <div class="genre-progress-fill" style="width: ${g.percent}%;"></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="taste-section">
+        <h4 class="taste-subhead"><i data-lucide="sparkles"></i> 최애 아티스트</h4>
+        <div class="favorite-artists-grid">
+          ${stats.artists.map(a => `
+            <div class="favorite-artist-chip">
+              <i data-lucide="music-2"></i>
+              <span>${a.artist}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="taste-actions">
+        <button class="btn-create-taste-mix" id="btn-play-taste-mix">
+          <i data-lucide="play-circle"></i>
+          <span>내 취향 맞춤 스테이션 재생</span>
+        </button>
+      </div>
+    `;
+
+    if (window.lucide) window.lucide.createIcons();
+
+    // 맞춤 스테이션 재생 버튼 클릭 이벤트
+    const btnPlayMix = document.getElementById('btn-play-taste-mix');
+    if (btnPlayMix) {
+      btnPlayMix.addEventListener('click', () => {
+        this.playSmartTasteMix(stats.topMood, stats.genres[0]?.genre);
+        this.closeAuthModal();
+      });
+    }
+  }
+
+  // 취향 맞춤 믹스 즉시 재생
+  playSmartTasteMix(topMood, topGenre) {
+    const all = this.player.queue || [];
+    // 상위 무드나 장르에 맞는 곡들을 우선 배치
+    const matched = all.filter(t => t.mood === topMood || t.genre === topGenre);
+    const others = all.filter(t => t.mood !== topMood && t.genre !== topGenre);
+    const smartMix = [...matched, ...others];
+
+    if (smartMix.length > 0) {
+      this.player.setQueue(smartMix, 0, true);
+      this.ui.showToast(`'${this.currentUser?.name || '나'}의 맞춤 취향 믹스' 재생 시작!`);
+    }
+  }
+}

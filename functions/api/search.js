@@ -83,10 +83,7 @@ async function scrapeYouTube(query) {
           mood: 'all',
           duration: durationSec,
           cover: cover,
-          lyrics: [
-            { time: 0, text: `[${title} 재생 중]` },
-            { time: 8, text: `아티스트: ${channel}` }
-          ],
+          lyrics: [],
           isLiked: false
         });
 
@@ -123,10 +120,7 @@ async function fetchFromInvidious(query) {
             duration: item.lengthSeconds || 210,
             cover: item.videoThumbnails?.find(t => t.quality === 'high')?.url ||
                    `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
-            lyrics: [
-              { time: 0, text: `[${item.title} 실시간 스트리밍 중]` },
-              { time: 10, text: "YouTube Music 스트리밍 엔진으로 재생 중입니다." }
-            ],
+            lyrics: [],
             isLiked: false
           }));
       }
