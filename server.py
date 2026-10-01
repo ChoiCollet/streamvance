@@ -44,38 +44,60 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         # 일반 정적 파일 서빙
         return super().do_GET()
 
-    def send_json(self, data):
-        payload = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Content-Length', str(len(payload)))
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range')
         self.end_headers()
-        self.wfile.write(payload)
+
+    def send_json(self, data):
+        try:
+            payload = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+        except Exception as e:
+            print(f"Error sending json: {e}", file=sys.stderr)
 
     def is_non_music(self, title, channel):
         lower_title = title.lower()
         lower_channel = channel.lower()
+
+        # 커버곡, 우타이테, 라이브 커버, 버튜버 곡 등은 절대 차단되지 않도록 강력한 가드
+        music_guards = [
+            'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics', '- topic', '노래',
+            'cover', '커버', 'live cover', '우타이테', '발묘', '출항', '스텔라이브', 'song', 'sing'
+        ]
+        has_music_guard = any(mg in lower_title or mg in lower_channel for mg in music_guards)
+
         non_music_keywords = [
             'reaction', '리액션', '리액트', 'reacts',
             'vlog', '브이로그', '먹방', 'mukbang', '요리', 'cook',
             'review', '리뷰', 'unboxing', '언박싱', '사용기',
-            'game', '게임', 'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+            'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
             'news', '뉴스', '속보', 'ytn', '기자', '정치', '시사',
-            'lecture', '강의', '설교', '공부', 'study with me',
+            'lecture', '강의', '설교', 'study with me',
             '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
             '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
             '하이라이트', 'highlight', '선공개', '예고편'
         ]
-        # 리액션, 브이로그, 먹방, 게임, 뉴스는 음악 키워드가 있어도 무조건 차단
-        for strict_kw in ['reaction', '리액션', 'vlog', '브이로그', '먹방', 'mukbang', '게임', 'gameplay', '뉴스', 'news']:
-            if strict_kw in lower_title or strict_kw in lower_channel:
+
+        # 순수 리액션, 먹방, 뉴스는 가드가 있어도 제외 (단, 커버곡이나 음원 관련은 허용)
+        for strict_kw in ['reaction', '리액션', '먹방', 'mukbang', '뉴스', 'news']:
+            if (strict_kw in lower_title or strict_kw in lower_channel) and not has_music_guard:
                 return True
 
         for kw in non_music_keywords:
             if kw in lower_title or kw in lower_channel:
-                music_guards = ['official mv', 'm/v', 'official audio', '가사', 'lyrics', '- topic', '노래']
-                if not any(mg in lower_title or mg in lower_channel for mg in music_guards):
+                if not has_music_guard:
                     return True
         return False
 
@@ -88,8 +110,8 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             score += 10
         if any(lbl in lc for lbl in ['official', 'record', 'entertainment', 'music', '음악', '1thek', 'stone music', 'smtown', 'jyp', 'hybe', 'bighit', 'yg', 'dingo', 'mnet']):
             score += 6
-        # 음악 메타데이터 키워드
-        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip', 'band']):
+        # 음악 메타데이터 키워드 (커버 및 라이브 포함)
+        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip', 'band', 'cover', '커버']):
             score += 5
         # 일반적인 노래 재생시간 (2분~5분)
         if 110 <= duration_sec <= 330:

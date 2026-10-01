@@ -24,11 +24,14 @@ export class AudioPlayer {
       onPlayStateChange: null,
       onTimeUpdate: null,
       onQueueUpdate: null,
-      onVolumeChange: null
+      onVolumeChange: null,
+      onAutoRecommendNext: null
     };
 
     this.initHTML5AudioListeners();
     this.initYouTubePlayer();
+    this.initMediaSession();
+    this.initBgKeepAlive();
   }
 
   // YouTube IFrame API 초기화
@@ -57,10 +60,14 @@ export class AudioPlayer {
               if (event.data === 1) {
                 this.isPlaying = true;
                 this.startProgressSync();
+                this.startBgKeepAlive();
+                this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
               } else if (event.data === 2) {
                 this.isPlaying = false;
                 this.stopProgressSync();
+                this.stopBgKeepAlive();
+                this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
               } else if (event.data === 0) {
                 // 재생 완료 시
@@ -105,11 +112,15 @@ export class AudioPlayer {
 
     this.audio.addEventListener('play', () => {
       this.isPlaying = true;
+      this.startBgKeepAlive();
+      this.syncMediaSessionPlaybackState();
       if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
     });
 
     this.audio.addEventListener('pause', () => {
       this.isPlaying = false;
+      this.stopBgKeepAlive();
+      this.syncMediaSessionPlaybackState();
       if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
     });
 
@@ -136,6 +147,106 @@ export class AudioPlayer {
         this.nextTrack(false);
       }
     });
+  }
+
+  // 1. 모바일 백그라운드 재생 지속을 위한 무음 오디오 앵커 (iOS/Android 백그라운드 스레드 보호)
+  initBgKeepAlive() {
+    try {
+      this.bgKeepAliveAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      this.bgKeepAliveAudio.loop = true;
+      this.bgKeepAliveAudio.volume = 0.01;
+    } catch (e) {
+      console.warn("Bg keepalive init error:", e);
+    }
+  }
+
+  startBgKeepAlive() {
+    if (this.bgKeepAliveAudio) {
+      this.bgKeepAliveAudio.play().catch(() => {});
+    }
+  }
+
+  stopBgKeepAlive() {
+    if (this.bgKeepAliveAudio) {
+      this.bgKeepAliveAudio.pause();
+    }
+  }
+
+  // 2. 모바일 잠금화면, 알림창, 블루투스 이어폰 컨트롤 완벽 연동 (MediaSession API)
+  initMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+
+    try {
+      navigator.mediaSession.setActionHandler('play', () => {
+        this.togglePlayPause();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        this.togglePlayPause();
+      });
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        this.prevTrack();
+      });
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        this.nextTrack(false);
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const skipTime = details.seekOffset || 10;
+        this.seekRelative(-skipTime);
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const skipTime = details.seekOffset || 10;
+        this.seekRelative(skipTime);
+      });
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime !== undefined) {
+          this.seekTo(details.seekTime);
+        }
+      });
+    } catch (e) {
+      console.warn("MediaSession action handler error:", e);
+    }
+  }
+
+  updateMediaSession(track) {
+    if (!('mediaSession' in navigator) || !track) return;
+
+    try {
+      const coverUrl = track.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=512&auto=format&fit=crop&q=80';
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || '곡 제목 없음',
+        artist: track.artist || 'Streamvance',
+        album: track.album || 'Streamvance Music',
+        artwork: [
+          { src: coverUrl, sizes: '96x96', type: 'image/jpeg' },
+          { src: coverUrl, sizes: '128x128', type: 'image/jpeg' },
+          { src: coverUrl, sizes: '192x192', type: 'image/jpeg' },
+          { src: coverUrl, sizes: '256x256', type: 'image/jpeg' },
+          { src: coverUrl, sizes: '384x384', type: 'image/jpeg' },
+          { src: coverUrl, sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+
+      this.syncMediaSessionPlaybackState();
+    } catch (e) {
+      console.warn("MediaSession update error:", e);
+    }
+  }
+
+  syncMediaSessionPlaybackState() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = this.isPlaying ? 'playing' : 'paused';
+      const curTrack = this.getCurrentTrack();
+      const duration = this.getDuration() || curTrack?.duration || 0;
+      const current = this.getCurrentTime() || 0;
+      if (duration > 0 && navigator.mediaSession.setPositionState) {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(duration, current),
+          playbackRate: 1.0,
+          position: Math.min(current, duration)
+        });
+      }
+    } catch (e) {}
   }
 
   isCurrentLocal() {
@@ -268,6 +379,8 @@ export class AudioPlayer {
       }
     }
 
+    this.updateMediaSession(track);
+
     if (this.callbacks.onTrackChange) {
       this.callbacks.onTrackChange(track, this.currentIndex);
     }
@@ -286,16 +399,21 @@ export class AudioPlayer {
       const state = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
       if (state === 1) { // playing
         this.ytPlayer.pauseVideo();
+        this.stopBgKeepAlive();
       } else {
         this.ytPlayer.playVideo();
+        this.startBgKeepAlive();
       }
     } else {
       if (this.audio.paused) {
         this.audio.play();
+        this.startBgKeepAlive();
       } else {
         this.audio.pause();
+        this.stopBgKeepAlive();
       }
     }
+    this.syncMediaSessionPlaybackState();
   }
 
   playTrackAtIndex(index) {
@@ -313,17 +431,31 @@ export class AudioPlayer {
 
     let nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.queue.length) {
-      if (typeof this.callbacks.onQueueNearEnd === 'function') {
-        this.callbacks.onQueueNearEnd();
+      // 1. 대기열 끝 도달 시 자동 추천 곡 추가 시도 (무한 연속 재생)
+      if (typeof this.callbacks.onAutoRecommendNext === 'function') {
+        const added = this.callbacks.onAutoRecommendNext(this.getCurrentTrack());
+        if (added && this.currentIndex + 1 < this.queue.length) {
+          nextIndex = this.currentIndex + 1;
+        }
       }
-      if (this.currentIndex + 1 < this.queue.length) {
-        nextIndex = this.currentIndex + 1;
-      } else if (this.repeatMode === 'all' || force) {
-        nextIndex = 0;
-      } else {
-        if (this.ytPlayer && this.ytPlayer.pauseVideo) this.ytPlayer.pauseVideo();
-        this.audio.pause();
-        return;
+
+      if (nextIndex >= this.queue.length && typeof this.callbacks.onQueueNearEnd === 'function') {
+        this.callbacks.onQueueNearEnd();
+        if (this.currentIndex + 1 < this.queue.length) {
+          nextIndex = this.currentIndex + 1;
+        }
+      }
+
+      if (nextIndex >= this.queue.length) {
+        if (this.repeatMode === 'all' || force) {
+          nextIndex = 0;
+        } else {
+          if (this.ytPlayer && this.ytPlayer.pauseVideo) this.ytPlayer.pauseVideo();
+          this.audio.pause();
+          this.stopBgKeepAlive();
+          this.syncMediaSessionPlaybackState();
+          return;
+        }
       }
     }
 

@@ -161,12 +161,16 @@ export class LyricsService {
     }
 
     // 4. 지능형 재생시간 델타 분석 (유튜브 영상 길이 vs LRCLIB 정품 음원 길이)
-    // 뮤직비디오는 스킷 인트로와 크레딧 엔딩으로 인해 원곡 음원보다 대개 8초 이상 김
-    if (lrcData && lrcData.duration && track.duration && isMv) {
+    // 유튜브 공식 영상/MV는 오프닝 인트로 및 로고 사운드로 인해 정품 음원보다 김
+    if (lrcData && lrcData.duration && track.duration) {
       const diff = track.duration - lrcData.duration;
-      if (diff >= 10) {
-        // 엔딩 크레딧 약 7.5초 제외한 인트로 스킷 길이를 오프셋으로 산출
-        return Math.max(0, Math.round(diff - 7.5));
+      // 1.5초 ~ 12초 차이: 표준적인 MV 오프닝/인트로 사운드 차이
+      if (diff >= 1.5 && diff <= 12.0) {
+        return Math.round(diff * 10) / 10;
+      }
+      // 12초 이상 차이: 드라마 스킷 인트로 + 크레딧 엔딩 (엔딩 5초 제외)
+      if (diff > 12.0 && diff <= 40.0) {
+        return Math.max(0, Math.round((diff - 5.0) * 10) / 10);
       }
     }
 
@@ -257,10 +261,19 @@ export class LyricsService {
               if (searchRes.ok) {
                 const searchData = await searchRes.json();
                 if (Array.isArray(searchData) && searchData.length > 0) {
+                  // 재생시간(duration) 오차가 가장 적은 정품 버전을 최우선 선별
+                  if (track.duration) {
+                    searchData.sort((a, b) => {
+                      const diffA = Math.abs((a.duration || 0) - track.duration);
+                      const diffB = Math.abs((b.duration || 0) - track.duration);
+                      return diffA - diffB;
+                    });
+                  }
+
                   const matchedArtistItem = searchData.find(item => {
                     const itemArtist = (item.artistName || '').toLowerCase();
                     return artistCandidates.some(c => itemArtist.includes(c.toLowerCase()) || c.toLowerCase().includes(itemArtist));
-                  });
+                  }) || searchData[0];
 
                   if (matchedArtistItem && matchedArtistItem.syncedLyrics) {
                     data = matchedArtistItem;
@@ -326,6 +339,15 @@ export class LyricsService {
   // LRC 형식 ([01:23.45] 가사 내용)을 밀리초 정확도의 객체 배열로 파싱 및 오프셋 적용
   parseLRC(lrcText, offset = 0) {
     if (!lrcText) return [];
+
+    // 1. LRC 파일 내부의 [offset: ±밀리초] 태그 파싱 (예: [offset:1200] -> +1.2초)
+    let internalOffset = 0;
+    const offsetTagMatch = lrcText.match(/\[offset:\s*([+-]?\d+)\]/i);
+    if (offsetTagMatch) {
+      internalOffset = parseFloat(offsetTagMatch[1]) / 1000.0;
+    }
+    const totalOffset = offset + internalOffset;
+
     const lines = lrcText.split('\n');
     const result = [];
     const timeGlobalRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
@@ -336,13 +358,13 @@ export class LyricsService {
         const text = rawLine.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim();
 
         // 메타태그나 빈 줄 무시
-        if (text && !text.startsWith('ti:') && !text.startsWith('ar:') && !text.startsWith('al:') && !text.startsWith('by:')) {
+        if (text && !text.startsWith('ti:') && !text.startsWith('ar:') && !text.startsWith('al:') && !text.startsWith('by:') && !text.startsWith('offset:')) {
           for (const match of timeMatches) {
             const min = parseInt(match[1], 10);
             const sec = parseInt(match[2], 10);
             const ms = parseFloat('0.' + match[3]);
             const originalTime = min * 60 + sec + ms;
-            const adjustedTime = Math.max(0, Math.round((originalTime + offset) * 100) / 100);
+            const adjustedTime = Math.max(0, Math.round((originalTime + totalOffset) * 100) / 100);
 
             result.push({
               originalTime: Math.round(originalTime * 100) / 100,

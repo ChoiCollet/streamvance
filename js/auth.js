@@ -11,7 +11,8 @@ export class AuthManager {
     this.currentUser = null;
     // 공식 구글 클라이언트 ID 자동 적용
     const savedClientId = localStorage.getItem('streamvance_google_client_id');
-    this.clientId = savedClientId || DEFAULT_GOOGLE_CLIENT_ID;
+    this.clientId = (savedClientId && !savedClientId.includes('YOUR_GOOGLE')) ? savedClientId : DEFAULT_GOOGLE_CLIENT_ID;
+    localStorage.setItem('streamvance_google_client_id', this.clientId);
     
     this.allTracks = [];
     
@@ -100,7 +101,7 @@ export class AuthManager {
     }
   }
 
-  // Google API로부터 실제 로그인한 사용자의 프로필 정보 수신
+  // Google API로부터 실제 로그인한 사용자의 프로필 정보 수신 및 YouTube 음악 데이터 동기화
   async fetchGoogleUserProfile(accessToken) {
     try {
       this.ui.showToast('Google 인증 완료! 계정 정보를 연동 중입니다...');
@@ -115,12 +116,16 @@ export class AuthManager {
           email: profile.email,
           picture: profile.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(profile.email || 'user')}`,
           isGoogle: true,
+          accessToken: accessToken,
           connectedAt: Date.now()
         };
         this.saveSession(user);
         this.updateUserUI();
-        this.ui.showToast(`환영합니다, ${user.name}님! Google 로그인이 완료되었습니다.`);
+        this.ui.showToast(`환영합니다, ${user.name}님! YouTube 음악 데이터를 불러옵니다.`);
         if (this.onUserLogin) this.onUserLogin(user);
+
+        // 실제 유튜브 계정의 '좋아요 표시한 음악' 및 '내 플레이리스트' 자동 동기화
+        await this.fetchYouTubeLikedVideos(accessToken);
       }
     } catch (e) {
       console.error("Google userinfo fetch error:", e);
@@ -128,7 +133,69 @@ export class AuthManager {
     }
   }
 
-  // 공식 Google OAuth 2.0 외부 로그인 페이지로 즉시 이동 (수동 입력 없이 자동 연결)
+  // 실제 유튜브 '좋아요 표시한 동영상/음악' (Liked Videos/Music) API 연동
+  async fetchYouTubeLikedVideos(accessToken) {
+    if (!accessToken) return;
+    try {
+      const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=LL&maxResults=50', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.items || [];
+        const syncedTracks = [];
+
+        items.forEach(item => {
+          const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+          const snip = item.snippet;
+          if (!videoId || !snip) return;
+
+          const title = snip.title;
+          const channel = snip.videoOwnerChannelTitle?.replace(/ - Topic$/i, '') || snip.channelTitle || 'YouTube Music';
+          const thumbs = snip.thumbnails || {};
+          const cover = thumbs.high?.url || thumbs.medium?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+          const trackObj = {
+            id: `yt-${videoId}`,
+            videoId: videoId,
+            title: title,
+            artist: channel,
+            album: 'YouTube 좋아요 음악',
+            genre: 'pop',
+            mood: 'all',
+            duration: 210,
+            cover: cover,
+            lyrics: [],
+            isLiked: true
+          };
+
+          this.ui.likedTracksMap.set(trackObj.id, trackObj);
+          this.ui.likedTrackIds.add(trackObj.id);
+          if (!this.allTracks.find(t => t.id === trackObj.id || t.videoId === videoId)) {
+            this.allTracks.unshift(trackObj);
+          }
+          syncedTracks.push(trackObj);
+        });
+
+        if (syncedTracks.length > 0) {
+          this.ui.saveLibraryState();
+          this.ui.updateLikesCount();
+          this.ui.showToast(`YouTube 좋아요 음악 ${syncedTracks.length}곡이 보관함에 동기화되었습니다!`);
+
+          const activeTab = document.querySelector('.lib-tab.active');
+          if (activeTab && activeTab.getAttribute('data-lib') === 'likes') {
+            this.ui.renderLibrary('likes', this.allTracks);
+          }
+        }
+      } else {
+        console.warn('YouTube Liked API response not ok:', res.status);
+      }
+    } catch (err) {
+      console.warn('YouTube Liked Videos fetch error:', err);
+    }
+  }
+
+  // 공식 Google OAuth 2.0 외부 로그인 페이지로 즉시 이동 (YouTube 읽기 권한 포함)
   launchRealGoogleOAuth(customClientId = '') {
     const clientId = (customClientId || this.clientId || DEFAULT_GOOGLE_CLIENT_ID).trim();
     
@@ -137,7 +204,8 @@ export class AuthManager {
     if (!cleanPath.endsWith('/')) cleanPath += '/';
     const redirectUri = window.location.origin + cleanPath;
     
-    const scope = encodeURIComponent('openid profile email');
+    // openid, profile, email + YouTube Data API 읽기 권한(좋아요 음악, 재생목록) 요청
+    const scope = encodeURIComponent('openid profile email https://www.googleapis.com/auth/youtube.readonly');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${scope}&prompt=select_account`;
 
     this.ui.showToast('Google 공식 로그인 페이지로 이동합니다...');
@@ -307,6 +375,21 @@ export class AuthManager {
 
     likedTracks.forEach(t => processTrack(t, 2));
     historyTracks.forEach(t => processTrack(t, 1));
+
+    // Google Takeout으로 가져온 아티스트 빈도수 가산 반영
+    try {
+      const savedTakeoutArtists = localStorage.getItem('streamvance_takeout_top_artists');
+      if (savedTakeoutArtists) {
+        const parsed = JSON.parse(savedTakeoutArtists);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(item => {
+            if (item.artist && item.count) {
+              artistScore[item.artist] = (artistScore[item.artist] || 0) + Math.min(item.count, 20);
+            }
+          });
+        }
+      }
+    } catch (e) {}
 
     // 기본 시드(아직 활동이 적을 때)
     if (Object.keys(genreScore).length === 0) {

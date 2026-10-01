@@ -167,15 +167,22 @@ export class YouTubeSearchService {
     const lt = (title || '').toLowerCase();
     const lc = (channel || '').toLowerCase();
 
-    for (const strictKw of ['reaction', '리액션', 'vlog', '브이로그', '먹방', 'mukbang', '게임', 'gameplay', '뉴스', 'news']) {
-      if (lt.includes(strictKw) || lc.includes(strictKw)) return true;
+    // 커버곡, 우타이테, 라이브 커버, 버튜버 곡 등은 절대 차단되지 않도록 강력한 가드
+    const musicGuards = [
+      'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics', '- topic', '노래',
+      'cover', '커버', 'live cover', '우타이테', '발묘', '출항', '스텔라이브', 'song', 'sing'
+    ];
+    const hasMusicGuard = musicGuards.some(mg => lt.includes(mg) || lc.includes(mg));
+
+    for (const strictKw of ['reaction', '리액션', '먹방', 'mukbang', '뉴스', 'news']) {
+      if ((lt.includes(strictKw) || lc.includes(strictKw)) && !hasMusicGuard) return true;
     }
 
     const nonMusicKeywords = [
       'review', '리뷰', 'unboxing', '언박싱', '사용기',
-      'game', '게임', 'walkthrough', 'playthrough', '공략', '롤', '배그',
-      'ytn', '기자', '정치', '시사', '속보',
-      'lecture', '강의', '설교', '공부', 'study with me',
+      'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+      'ytn', '기자', '정치', '시사',
+      'lecture', '강의', '설교', 'study with me',
       '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
       '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
       '하이라이트', 'highlight', '선공개', '예고편'
@@ -183,8 +190,7 @@ export class YouTubeSearchService {
 
     for (const kw of nonMusicKeywords) {
       if (lt.includes(kw) || lc.includes(kw)) {
-        const musicGuards = ['official mv', 'm/v', 'official audio', '가사', 'lyrics', '- topic', '노래'];
-        if (!musicGuards.some(mg => lt.includes(mg) || lc.includes(mg))) {
+        if (!hasMusicGuard) {
           return true;
         }
       }
@@ -198,7 +204,7 @@ export class YouTubeSearchService {
     const lc = (channel || '').toLowerCase();
     if (lc.includes('- topic')) score += 10;
     if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo/i.test(lc)) score += 6;
-    if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip/i.test(lt)) score += 5;
+    if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip|band|cover|커버/i.test(lt)) score += 5;
     if (durationSec >= 110 && durationSec <= 330) score += 3;
     return score;
   }

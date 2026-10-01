@@ -136,6 +136,10 @@
               <i data-lucide="thumbs-up"></i>
               <span>좋아요 표시한 음악</span>
             </button>
+            <button class="dropdown-menu-item" id="menu-import-takeout">
+              <i data-lucide="file-up"></i>
+              <span>YouTube 기록 파일 가져오기 (Takeout)</span>
+            </button>
             <div class="dropdown-divider"></div>
             <div class="dropdown-menu-item static">
               <i data-lucide="shield-check"></i>
@@ -522,6 +526,10 @@
             <i data-lucide="list-music"></i>
           </button>
 
+          <button class="ctrl-btn" id="btn-toggle-pip" title="미니 플레이어 (PIP 화면 속 화면)">
+            <i data-lucide="picture-in-picture-2"></i>
+          </button>
+
           <button class="ctrl-btn" id="btn-expand-player" title="가사 및 대기열 열기">
             <i data-lucide="chevron-up"></i>
           </button>
@@ -534,6 +542,9 @@
       <div class="modal-header">
         <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기">
           <i data-lucide="chevron-down"></i>
+        </button>
+        <button class="icon-btn-modal" id="btn-modal-pip" title="화면 속 화면 (PIP 미니 플레이어)">
+          <i data-lucide="picture-in-picture-2"></i>
         </button>
         <div class="modal-header-spacer"></div>
         <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
@@ -753,6 +764,25 @@
             <i data-lucide="user"></i>
             <span>게스트로 로그인</span>
           </button>
+
+          <!-- 개발자/사용자 맞춤 Google OAuth Client ID 설정 영역 (접이식) -->
+          <div class="google-client-id-settings" style="margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px;">
+            <button type="button" id="btn-toggle-client-id-settings" style="background: none; border: none; color: #aaa; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 100%; gap: 6px; padding: 6px 0;">
+              <i data-lucide="settings" style="width: 14px; height: 14px;"></i>
+              <span>Google Cloud Client ID 직접 설정 / 변경</span>
+              <i data-lucide="chevron-down" style="width: 14px; height: 14px;" id="icon-client-id-arrow"></i>
+            </button>
+            <div id="client-id-settings-box" style="display: none; margin-top: 10px; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px;">
+              <p style="font-size: 0.75rem; color: #4ade80; margin-bottom: 8px; line-height: 1.4; display: flex; align-items: center; gap: 4px;">
+                <span>✓ 현재 공식 Client ID가 자동으로 기본 적용되어 있습니다.</span>
+              </p>
+              <input type="text" id="input-custom-client-id" value="498281456710-j65e94rqobf3qih5gc9n0paghipckemb.apps.googleusercontent.com" placeholder="498281456710-j65e94rqobf3qih5gc9n0paghipckemb.apps.googleusercontent.com" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 8px 10px; color: #fff; font-size: 0.8rem; margin-bottom: 8px;">
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="btn-save-custom-client-id" style="flex: 1; padding: 7px; background: #ff0055; color: #fff; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">저장</button>
+                <button type="button" id="btn-reset-custom-client-id" style="padding: 7px 12px; background: rgba(255,255,255,0.1); color: #ccc; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">기본값 복원</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -772,6 +802,48 @@
         </div>
         <div class="taste-analysis-content" id="taste-analysis-content">
           <!-- JS 렌더링 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Google Takeout YouTube 기록 가져오기 모달 -->
+    <div class="auth-modal" id="takeout-import-modal">
+      <div class="modal-backdrop" id="takeout-modal-backdrop"></div>
+      <div class="google-signin-dialog" style="max-width: 480px;">
+        <div class="google-dialog-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="file-up" style="color: #ff0055; width: 26px; height: 26px;"></i>
+            <div>
+              <h2 class="google-dialog-title" style="font-size: 1.15rem;">YouTube 기록 파일 가져오기</h2>
+              <p class="google-dialog-subtitle">Google 테이크아웃 파일로 내 취향 알고리즘 연동</p>
+            </div>
+          </div>
+          <button class="auth-modal-close" id="btn-close-takeout-modal">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div class="google-dialog-body" style="padding: 16px 20px;">
+          <!-- 다운로드 안내 -->
+          <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 0.8rem; line-height: 1.5; color: #ccc;">
+            <div style="font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <i data-lucide="help-circle" style="width: 15px; height: 15px; color: #ff0055;"></i>
+              <span>기록 파일 다운로드 방법</span>
+            </div>
+            1. <a href="https://takeout.google.com" target="_blank" rel="noopener noreferrer" style="color: #ff0055; text-decoration: underline;">takeout.google.com</a> 접속 후 'YouTube'만 선택<br>
+            2. '기록(시청 기록)' 내보내기 다운로드<br>
+            3. 압축 해제 후 <b>watch-history.json</b> (또는 .html) 파일을 아래에 넣어주세요!
+          </div>
+
+          <!-- 드래그 & 드롭 업로드 영역 -->
+          <div id="takeout-dropzone" style="border: 2px dashed rgba(255, 0, 85, 0.4); border-radius: 16px; padding: 28px 16px; text-align: center; background: rgba(255, 0, 85, 0.03); cursor: pointer; transition: all 0.2s ease;">
+            <i data-lucide="upload-cloud" style="width: 40px; height: 40px; color: #ff0055; margin-bottom: 8px;"></i>
+            <p style="font-size: 0.95rem; font-weight: 600; color: #fff; margin: 0 0 4px 0;">파일을 여기에 드래그하거나 클릭하여 선택</p>
+            <p style="font-size: 0.78rem; color: #888; margin: 0;">지원 형식: watch-history.json, search-history.json, .html</p>
+            <input type="file" id="takeout-file-input" accept=".json,.html,.htm" style="display: none;">
+          </div>
+
+          <div id="takeout-status-msg" style="margin-top: 12px; font-size: 0.82rem; text-align: center; color: #4ade80; display: none;"></div>
         </div>
       </div>
     </div>
