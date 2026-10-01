@@ -53,10 +53,53 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def is_non_music(self, title, channel):
+        lower_title = title.lower()
+        lower_channel = channel.lower()
+        non_music_keywords = [
+            'reaction', '리액션', '리액트', 'reacts',
+            'vlog', '브이로그', '먹방', 'mukbang', '요리', 'cook',
+            'review', '리뷰', 'unboxing', '언박싱', '사용기',
+            'game', '게임', 'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+            'news', '뉴스', '속보', 'ytn', '기자', '정치', '시사',
+            'lecture', '강의', '설교', '공부', 'study with me',
+            '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
+            '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
+            '하이라이트', 'highlight', '선공개', '예고편'
+        ]
+        # 리액션, 브이로그, 먹방, 게임, 뉴스는 음악 키워드가 있어도 무조건 차단
+        for strict_kw in ['reaction', '리액션', 'vlog', '브이로그', '먹방', 'mukbang', '게임', 'gameplay', '뉴스', 'news']:
+            if strict_kw in lower_title or strict_kw in lower_channel:
+                return True
+
+        for kw in non_music_keywords:
+            if kw in lower_title or kw in lower_channel:
+                music_guards = ['official mv', 'm/v', 'official audio', '가사', 'lyrics', '- topic', '노래']
+                if not any(mg in lower_title or mg in lower_channel for mg in music_guards):
+                    return True
+        return False
+
+    def music_score(self, title, channel, duration_sec):
+        score = 0
+        lt = title.lower()
+        lc = channel.lower()
+        # 공식 음원 채널 (Topic은 유튜브 뮤직 공식 아트 트랙)
+        if '- topic' in lc:
+            score += 10
+        if any(lbl in lc for lbl in ['official', 'record', 'entertainment', 'music', '음악', '1thek', 'stone music', 'smtown', 'jyp', 'hybe', 'bighit', 'yg', 'dingo', 'mnet']):
+            score += 6
+        # 음악 메타데이터 키워드
+        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip', 'band']):
+            score += 5
+        # 일반적인 노래 재생시간 (2분~5분)
+        if 110 <= duration_sec <= 330:
+            score += 3
+        return score
+
     def search_youtube(self, query):
         try:
-            # YouTube 검색 페이지 요청
-            search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
+            # YouTube 검색 페이지 요청 (비디오 우선 필터 적용: sp=EgIQAQ%253D%253D)
+            search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}&sp=EgIQAQ%253D%253D"
             req = urllib.request.Request(
                 search_url,
                 headers={
@@ -87,7 +130,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 for section in contents:
                     item_section = section.get('itemSectionRenderer', {})
                     for item in item_section.get('contents', []):
-                        # 1) officialCardViewModel (공식 아티스트 상위 검색결과 - 스크린샷 2 100% 매칭)
+                        # 1) officialCardViewModel (공식 아티스트 상위 검색결과)
                         if 'officialCardViewModel' in item and not artist_info:
                             ocv = item['officialCardViewModel']
                             header = ocv.get('header', {}).get('pageHeaderViewModel', {})
@@ -149,13 +192,19 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                         thumbnails = v.get('thumbnail', {}).get('thumbnails', [])
                         cover = thumbnails[-1]['url'] if thumbnails else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
+                        # [비음악 유튜브 영상 완전 차단 필터링]
+                        # 리액션, 브이로그, 먹방, 예능, 리뷰, 게임, 뉴스 등 비음악 영상 제외
+                        if self.is_non_music(title, channel):
+                            continue
+
                         # 타유튜버 편집본, 1시간 연속재생, 플레이리스트 모음 판별
                         is_compilation = (duration_sec > 600) or any(k in title.lower() for k in [
                             'playlist', '플레이리스트', '노래 모음', '전곡 모음', '1시간', '1 hour', '1hr', '모음집', '연속 듣기', '연속 재생', 'mix'
                         ])
 
-                        # Shorts 제외 (15초 이상)
-                        if duration_sec > 15:
+                        # Shorts 제외 (45초 이상)
+                        if duration_sec >= 45:
+                            score = self.music_score(title, channel, duration_sec)
                             track_obj = {
                                 'id': f"yt-{video_id}",
                                 'videoId': video_id,
@@ -168,7 +217,8 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                                 'cover': cover,
                                 'lyrics': [],
                                 'isLiked': False,
-                                'isCompilation': is_compilation
+                                'isCompilation': is_compilation,
+                                '_score': score
                             }
                             if is_compilation:
                                 compilations.append(track_obj)
@@ -177,6 +227,9 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
 
             except Exception as e:
                 print(f"Error parsing items: {e}", file=sys.stderr)
+
+            # 음악 적합도 점수 높은 순으로 정렬
+            songs.sort(key=lambda s: s.get('_score', 0), reverse=True)
 
             # 아티스트 검색 폴백: 검색어와 매칭되는 채널/가수가 상위에 있으면 아티스트 카드 생성
             if not artist_info and songs:

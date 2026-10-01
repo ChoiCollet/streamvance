@@ -860,6 +860,123 @@ a {
   object-fit: cover;
 }
 
+/* 아티스트 퀵 선택 칩 바 (원하는 아티스트 선택 시 해당 아티스트 노래만 표시) */
+.spotlight-artist-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 8px 2px 14px 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.spotlight-artist-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.artist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 8px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.18s cubic-bezier(0.25, 1, 0.5, 1);
+  user-select: none;
+}
+
+.artist-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.artist-chip.active {
+  background: #ffffff;
+  color: #030303;
+  border-color: #ffffff;
+  box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25);
+}
+
+.artist-chip-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #222;
+}
+
+/* 아티스트 스포트라이트 전용 영상/노래 크기 100% 동일 규격 통일 (사용자 요청 2번) */
+#spotlight-tracks-list {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 20px !important;
+  overflow-x: auto !important;
+  padding: 4px 2px 16px 2px !important;
+  scroll-behavior: smooth !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+#spotlight-tracks-list::-webkit-scrollbar {
+  display: none !important;
+}
+
+#spotlight-tracks-list .music-card {
+  flex: 0 0 180px !important;
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#spotlight-tracks-list .card-cover-wrapper {
+  position: relative !important;
+  width: 180px !important;
+  height: 180px !important;
+  aspect-ratio: 1 / 1 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background: #181818 !important;
+  flex-shrink: 0 !important;
+}
+
+#spotlight-tracks-list .card-cover-wrapper img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+#spotlight-tracks-list .card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+
+#spotlight-tracks-list .card-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-muted, #aaaaaa);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ==========================================================================
    섹션 4: 실시간 TOP 차트 & 라이브 뱃지
    ========================================================================== */
@@ -3216,6 +3333,25 @@ a {
   padding: 4px;
 }
 
+.mobile-search-submit-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin-left: 2px;
+  border-radius: 50%;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.mobile-search-submit-btn:active {
+  transform: scale(0.92);
+  opacity: 0.8;
+}
+
 .mobile-search-body {
   flex: 1;
   overflow-y: auto;
@@ -3482,25 +3618,32 @@ a {
 }
 
 .btn-video-theater {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  padding: 7px 14px;
-  border-radius: 18px;
-  font-size: 0.82rem;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .btn-video-theater:hover {
   background: rgba(0, 0, 0, 0.95);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: scale(1.04);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+.btn-video-theater.active {
+  background: #ffffff;
+  color: #030303;
+  border-color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
 }
 
 .btn-video-fs {
@@ -3556,21 +3699,5 @@ a {
   font-size: 1.15rem !important;
   margin: 10px 0 !important;
   line-height: 1.4 !important;
-}
-
-/* ========================================================================== */
-/* 16. Spotlight Tracks Horizontal Scrolling                                  */
-/* ========================================================================== */
-#spotlight-tracks-list {
-  display: flex !important;
-  gap: 16px !important;
-  overflow-x: auto !important;
-  padding-bottom: 12px !important;
-  scrollbar-width: thin !important;
-  scroll-behavior: smooth !important;
-}
-
-#spotlight-tracks-list .music-card {
-  flex: 0 0 170px !important;
 }
 

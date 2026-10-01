@@ -28,9 +28,51 @@ function parseDuration(lengthText) {
   return 210;
 }
 
+function isNonMusic(title, channel) {
+  const lt = (title || '').toLowerCase();
+  const lc = (channel || '').toLowerCase();
+
+  // 리액션, 브이로그, 먹방, 게임, 뉴스는 완전 차단
+  for (const strictKw of ['reaction', '리액션', 'vlog', '브이로그', '먹방', 'mukbang', '게임', 'gameplay', '뉴스', 'news']) {
+    if (lt.includes(strictKw) || lc.includes(strictKw)) return true;
+  }
+
+  const nonMusicKeywords = [
+    'review', '리뷰', 'unboxing', '언박싱', '사용기',
+    'game', '게임', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+    'ytn', '기자', '정치', '시사', '속보',
+    'lecture', '강의', '설교', '공부', 'study with me',
+    '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
+    '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
+    '하이라이트', 'highlight', '선공개', '예고편'
+  ];
+
+  for (const kw of nonMusicKeywords) {
+    if (lt.includes(kw) || lc.includes(kw)) {
+      const musicGuards = ['official mv', 'm/v', 'official audio', '가사', 'lyrics', '- topic', '노래'];
+      if (!musicGuards.some(mg => lt.includes(mg) || lc.includes(mg))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function calcMusicScore(title, channel, durationSec) {
+  let score = 0;
+  const lt = (title || '').toLowerCase();
+  const lc = (channel || '').toLowerCase();
+
+  if (lc.includes('- topic')) score += 10;
+  if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo|mnet/i.test(lc)) score += 6;
+  if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip|band/i.test(lt)) score += 5;
+  if (durationSec >= 110 && durationSec <= 330) score += 3;
+  return score;
+}
+
 // 1. YouTube 웹 검색 직접 파싱 (server.py의 핵심 로직 이식)
 async function scrapeYouTube(query) {
-  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
   const res = await fetch(searchUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -84,9 +126,13 @@ async function scrapeYouTube(query) {
       const thumbnails = v.thumbnail?.thumbnails || [];
       const cover = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
+      // 비음악 일반 영상 차단
+      if (isNonMusic(title, channel)) continue;
+
       const isCompilation = (durationSec > 600) || /playlist|플레이리스트|노래 모음|전곡 모음|1시간|1 hour|모음집|연속/i.test(title);
 
-      if (durationSec > 15) {
+      if (durationSec >= 45) {
+        const score = calcMusicScore(title, channel, durationSec);
         const trackObj = {
           id: `yt-${videoId}`,
           videoId: videoId,
@@ -99,7 +145,8 @@ async function scrapeYouTube(query) {
           cover: cover,
           lyrics: [],
           isLiked: false,
-          isCompilation
+          isCompilation,
+          _score: score
         };
         if (isCompilation) {
           compilations.push(trackObj);
@@ -109,6 +156,9 @@ async function scrapeYouTube(query) {
       }
     }
   }
+
+  // 음악 적합도 점수 높은 순으로 정렬
+  songs.sort((a, b) => (b._score || 0) - (a._score || 0));
 
   const allTracks = [...songs, ...compilations];
   return {

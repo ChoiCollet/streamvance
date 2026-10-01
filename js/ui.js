@@ -102,7 +102,11 @@ export class UIManager {
       btnGenrePlayAll: document.getElementById('btn-genre-play-all'),
       btnGenreShuffle: document.getElementById('btn-genre-shuffle'),
       btnVideoTheater: document.getElementById('btn-video-theater'),
-      btnVideoFs: document.getElementById('btn-video-fs')
+      btnVideoFs: document.getElementById('btn-video-fs'),
+      modal: document.getElementById('full-player-modal'),
+      mobileSearchForm: document.getElementById('mobile-search-form'),
+      mobileSearchSubmitBtn: document.getElementById('btn-mobile-search-submit'),
+      spotlightArtistChips: document.getElementById('spotlight-artist-chips')
     };
   }
 
@@ -273,6 +277,24 @@ export class UIManager {
         <div class="card-subtitle">노래 • ${track.artist}</div>
       </div>
     `).join('');
+  }
+
+  // 3-1. 아티스트 퀵 선택 칩 바 렌더링 (특정 아티스트 선택 시 해당 아티스트 노래만 표시)
+  renderSpotlightChips(artists, currentIndex, onSelect) {
+    if (!this.dom.spotlightArtistChips) return;
+    this.dom.spotlightArtistChips.innerHTML = artists.map((artist, idx) => `
+      <button class="artist-chip ${idx === currentIndex ? 'active' : ''}" data-artist-index="${idx}">
+        <img class="artist-chip-avatar" src="${artist.image || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artist.name}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100';">
+        <span>${artist.name}</span>
+      </button>
+    `).join('');
+
+    this.dom.spotlightArtistChips.querySelectorAll('.artist-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-artist-index'), 10);
+        if (typeof onSelect === 'function') onSelect(idx);
+      });
+    });
   }
 
   // 4. TOP 차트 렌더링

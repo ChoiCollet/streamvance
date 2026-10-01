@@ -23,10 +23,20 @@ export class YouTubeSearchService {
     const q = query.trim();
     const cacheKey = q.toLowerCase();
 
-    // [캐시 히트] 이미 검색했던 단어는 0ms 즉시 반환
+    // [캐시 히트] 이미 검색했던 단어는 0ms 즉시 반환 (인메모리 및 세션스토리지)
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
     }
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const stored = sessionStorage.getItem(`ytm_search_${cacheKey}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          this.cache.set(cacheKey, parsed);
+          return parsed;
+        }
+      }
+    } catch (e) {}
 
     const cleanQuery = encodeURIComponent(q);
 
@@ -64,6 +74,11 @@ export class YouTubeSearchService {
           }
           if (normalized) {
             this.cache.set(cacheKey, normalized);
+            try {
+              if (typeof window !== 'undefined' && window.sessionStorage) {
+                sessionStorage.setItem(`ytm_search_${cacheKey}`, JSON.stringify(normalized));
+              }
+            } catch (e) {}
             return normalized;
           }
         }
@@ -83,6 +98,11 @@ export class YouTubeSearchService {
           videos: []
         };
         this.cache.set(cacheKey, normalized);
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem(`ytm_search_${cacheKey}`, JSON.stringify(normalized));
+          }
+        } catch (e) {}
         return normalized;
       }
     } catch (err) {
@@ -109,8 +129,8 @@ export class YouTubeSearchService {
         const data = await res.json();
 
         if (Array.isArray(data) && data.length > 0) {
-          return data
-            .filter(item => item.type === 'video' && item.videoId)
+          const filtered = data
+            .filter(item => item.type === 'video' && item.videoId && !this.isNonMusic(item.title, item.author))
             .map(item => ({
               id: `yt-${item.videoId}`,
               videoId: item.videoId,
@@ -123,8 +143,11 @@ export class YouTubeSearchService {
               cover: item.videoThumbnails?.find(t => t.quality === 'high')?.url ||
                      `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
               lyrics: [],
-              isLiked: false
+              isLiked: false,
+              _score: this.calcScore(item.title, item.author, item.lengthSeconds || 210)
             }));
+          filtered.sort((a, b) => b._score - a._score);
+          return filtered;
         }
         throw new Error('Empty items');
       } catch (err) {
@@ -138,6 +161,46 @@ export class YouTubeSearchService {
     } catch {
       return [];
     }
+  }
+
+  isNonMusic(title, channel) {
+    const lt = (title || '').toLowerCase();
+    const lc = (channel || '').toLowerCase();
+
+    for (const strictKw of ['reaction', '리액션', 'vlog', '브이로그', '먹방', 'mukbang', '게임', 'gameplay', '뉴스', 'news']) {
+      if (lt.includes(strictKw) || lc.includes(strictKw)) return true;
+    }
+
+    const nonMusicKeywords = [
+      'review', '리뷰', 'unboxing', '언박싱', '사용기',
+      'game', '게임', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+      'ytn', '기자', '정치', '시사', '속보',
+      'lecture', '강의', '설교', '공부', 'study with me',
+      '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
+      '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
+      '하이라이트', 'highlight', '선공개', '예고편'
+    ];
+
+    for (const kw of nonMusicKeywords) {
+      if (lt.includes(kw) || lc.includes(kw)) {
+        const musicGuards = ['official mv', 'm/v', 'official audio', '가사', 'lyrics', '- topic', '노래'];
+        if (!musicGuards.some(mg => lt.includes(mg) || lc.includes(mg))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  calcScore(title, channel, durationSec) {
+    let score = 0;
+    const lt = (title || '').toLowerCase();
+    const lc = (channel || '').toLowerCase();
+    if (lc.includes('- topic')) score += 10;
+    if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo/i.test(lc)) score += 6;
+    if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip/i.test(lt)) score += 5;
+    if (durationSec >= 110 && durationSec <= 330) score += 3;
+    return score;
   }
 
   // 곡 제목의 불필요한 태그([Official MV], (Audio) 등) 정리
