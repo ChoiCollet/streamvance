@@ -41,8 +41,8 @@ export class LyricsService {
     const quotedTitle = quoteMatch ? quoteMatch[1].trim() : '';
 
     let cleanTitle = title
-      .replace(/\[(Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Performance|Teaser|Full Album).*?\]/gi, '')
-      .replace(/\((Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Performance|Teaser|Full Album).*?\)/gi, '')
+      .replace(/\[(Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Performance|Teaser|Full Album|Color Coded|Prod\..*?|4K|세로캠|Live|교차편집).*?\]/gi, '')
+      .replace(/\((Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Performance|Teaser|Full Album|Color Coded|Prod\..*?|4K|세로캠|Live|교차편집).*?\)/gi, '')
       .replace(/【.*?】/g, '')
       .replace(/feat\..*$/i, '')
       .replace(/\(feat\..*?\)/i, '')
@@ -137,12 +137,15 @@ export class LyricsService {
     }
 
     // 2. 검증된 대표 공식 MV 프리셋 테이블
-    const rawId = trackKey.replace(/^yt-/, '');
+    const rawId = track.videoId || trackKey.replace(/^(yt|chart)-/, '');
     if (KNOWN_MV_OFFSETS[rawId] !== undefined) {
       return KNOWN_MV_OFFSETS[rawId];
     }
     if (KNOWN_MV_OFFSETS[trackKey] !== undefined) {
       return KNOWN_MV_OFFSETS[trackKey];
+    }
+    if (KNOWN_MV_OFFSETS[`yt-${rawId}`] !== undefined) {
+      return KNOWN_MV_OFFSETS[`yt-${rawId}`];
     }
 
     // 3. 곡 제목 및 아티스트 기반 키워드 매칭
@@ -325,26 +328,29 @@ export class LyricsService {
     if (!lrcText) return [];
     const lines = lrcText.split('\n');
     const result = [];
-    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+    const timeGlobalRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
 
     for (const rawLine of lines) {
-      const match = timeRegex.exec(rawLine);
-      if (match) {
-        const min = parseInt(match[1], 10);
-        const sec = parseInt(match[2], 10);
-        const ms = parseFloat('0.' + match[3]);
-        const originalTime = min * 60 + sec + ms;
-        const adjustedTime = Math.max(0, Math.round((originalTime + offset) * 100) / 100);
+      const timeMatches = [...rawLine.matchAll(timeGlobalRegex)];
+      if (timeMatches.length > 0) {
         const text = rawLine.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim();
 
         // 메타태그나 빈 줄 무시
         if (text && !text.startsWith('ti:') && !text.startsWith('ar:') && !text.startsWith('al:') && !text.startsWith('by:')) {
-          result.push({
-            originalTime: Math.round(originalTime * 100) / 100,
-            time: adjustedTime,
-            text: text,
-            isInstrumental: false
-          });
+          for (const match of timeMatches) {
+            const min = parseInt(match[1], 10);
+            const sec = parseInt(match[2], 10);
+            const ms = parseFloat('0.' + match[3]);
+            const originalTime = min * 60 + sec + ms;
+            const adjustedTime = Math.max(0, Math.round((originalTime + offset) * 100) / 100);
+
+            result.push({
+              originalTime: Math.round(originalTime * 100) / 100,
+              time: adjustedTime,
+              text: text,
+              isInstrumental: false
+            });
+          }
         }
       }
     }

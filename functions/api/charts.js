@@ -42,7 +42,7 @@ export async function onRequestGet(context) {
         const cover = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
         items.push({
-          id: `chart-${videoId}`,
+          id: `yt-${videoId}`,
           videoId: videoId,
           title: title.replace(/\[.*?\]|\(.*?\)/g, '').trim(),
           artist: channel,

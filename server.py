@@ -38,7 +38,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts
         if parsed.path == '/api/charts':
             results = self.search_youtube('2026 K-POP 인기 차트 TOP 50')
-            self.send_json(results)
+            self.send_json(results.get('tracks', []))
             return
 
         # 일반 정적 파일 서빙
@@ -77,7 +77,9 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 return []
 
             data = json.loads(match.group(1))
-            items = []
+            songs = []
+            compilations = []
+            artist_info = None
 
             # JSON 트리 탐색
             try:
@@ -85,6 +87,46 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 for section in contents:
                     item_section = section.get('itemSectionRenderer', {})
                     for item in item_section.get('contents', []):
+                        # 1) officialCardViewModel (공식 아티스트 상위 검색결과 - 스크린샷 2 100% 매칭)
+                        if 'officialCardViewModel' in item and not artist_info:
+                            ocv = item['officialCardViewModel']
+                            header = ocv.get('header', {}).get('pageHeaderViewModel', {})
+                            title_cont = header.get('title', {}).get('dynamicTextViewModel', {}).get('text', {}).get('content', '')
+                            img_sources = header.get('image', {}).get('contentPreviewImageViewModel', {}).get('image', {}).get('sources', [])
+                            avatar = img_sources[-1].get('url') if img_sources else ''
+                            sub_text = '아티스트'
+                            meta_rows = header.get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
+                            for row in meta_rows:
+                                for part in row.get('metadataParts', []):
+                                    c = part.get('text', {}).get('content', '')
+                                    if '구독자' in c:
+                                        sub_text = c
+                                        break
+                                if sub_text != '아티스트':
+                                    break
+                            if title_cont:
+                                artist_info = {
+                                    'name': title_cont,
+                                    'subscribers': sub_text,
+                                    'avatar': avatar
+                                }
+
+                        # 2) channelRenderer (유튜브 채널 렌더러)
+                        if 'channelRenderer' in item and not artist_info:
+                            cr = item['channelRenderer']
+                            title_obj = cr.get('title', {})
+                            name = title_obj.get('simpleText') or (title_obj.get('runs', [{}])[0].get('text', ''))
+                            sub_obj = cr.get('subscriberCountText', {})
+                            sub = sub_obj.get('simpleText') or (sub_obj.get('runs', [{}])[0].get('text', ''))
+                            thumbs = cr.get('thumbnail', {}).get('thumbnails', [])
+                            avatar = thumbs[-1].get('url') if thumbs else ''
+                            if name:
+                                artist_info = {
+                                    'name': name,
+                                    'subscribers': sub or '아티스트',
+                                    'avatar': avatar
+                                }
+
                         v = item.get('videoRenderer')
                         if not v or 'videoId' not in v:
                             continue
@@ -107,9 +149,14 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                         thumbnails = v.get('thumbnail', {}).get('thumbnails', [])
                         cover = thumbnails[-1]['url'] if thumbnails else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
-                        # Shorts 제외 및 유효한 곡만 추가
+                        # 타유튜버 편집본, 1시간 연속재생, 플레이리스트 모음 판별
+                        is_compilation = (duration_sec > 600) or any(k in title.lower() for k in [
+                            'playlist', '플레이리스트', '노래 모음', '전곡 모음', '1시간', '1 hour', '1hr', '모음집', '연속 듣기', '연속 재생', 'mix'
+                        ])
+
+                        # Shorts 제외 (15초 이상)
                         if duration_sec > 15:
-                            items.append({
+                            track_obj = {
                                 'id': f"yt-{video_id}",
                                 'videoId': video_id,
                                 'title': self.clean_title(title),
@@ -120,17 +167,41 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                                 'duration': duration_sec,
                                 'cover': cover,
                                 'lyrics': [],
-                                'isLiked': False
-                            })
-                            if len(items) >= 25:
-                                break
+                                'isLiked': False,
+                                'isCompilation': is_compilation
+                            }
+                            if is_compilation:
+                                compilations.append(track_obj)
+                            else:
+                                songs.append(track_obj)
+
             except Exception as e:
                 print(f"Error parsing items: {e}", file=sys.stderr)
 
-            return items
+            # 아티스트 검색 폴백: 검색어와 매칭되는 채널/가수가 상위에 있으면 아티스트 카드 생성
+            if not artist_info and songs:
+                q_clean = query.strip().lower()
+                for s in songs[:5]:
+                    s_artist = s.get('artist', '').lower()
+                    if (len(q_clean) >= 2 and (q_clean in s_artist or s_artist in q_clean)):
+                        artist_info = {
+                            'name': s.get('artist'),
+                            'subscribers': '아티스트',
+                            'avatar': s.get('cover')
+                        }
+                        break
+
+            # 정품 노래를 최우선으로 배치하고, 그 뒤에 컴필레이션/영상 배치
+            all_results = songs + compilations
+            return {
+                'artist': artist_info,
+                'tracks': all_results[:30],
+                'songs': songs[:20],
+                'videos': compilations[:15]
+            }
         except Exception as e:
             print(f"YouTube search error: {e}", file=sys.stderr)
-            return []
+            return {'artist': None, 'tracks': [], 'songs': [], 'videos': []}
 
     def clean_title(self, title):
         title = re.sub(r'\[(Official|MV|M/V|Audio|Music Video|가사|Lyrics|Special Clip).*?\]', '', title, flags=re.I)

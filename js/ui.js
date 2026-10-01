@@ -18,18 +18,8 @@ export class UIManager {
         storedLikes.forEach(t => {
           if (t && t.id) this.likedTracksMap.set(t.id, t);
         });
-      } else {
-        ['track-hypeboy', 'track-blue-flame', 'track-apt', 'track-supernova'].forEach(id => {
-          const t = sampleTracks.find(st => st.id === id);
-          if (t) this.likedTracksMap.set(t.id, t);
-        });
       }
-    } catch (e) {
-      ['track-hypeboy', 'track-blue-flame', 'track-apt', 'track-supernova'].forEach(id => {
-        const t = sampleTracks.find(st => st.id === id);
-        if (t) this.likedTracksMap.set(t.id, t);
-      });
-    }
+    } catch (e) {}
     this.likedTrackIds = new Set(this.likedTracksMap.keys());
 
     // 시청 / 감상 기록 영구 저장 및 관리
@@ -94,7 +84,25 @@ export class UIManager {
       searchInput: document.getElementById('search-input'),
       searchClearBtn: document.getElementById('search-clear-btn'),
       toast: document.getElementById('toast-notification'),
-      likesCount: document.getElementById('likes-count')
+      likesCount: document.getElementById('likes-count'),
+
+      // 모바일 검색 & 둘러보기 상세 & 비디오 확장 요소
+      mobileSearchBtn: document.getElementById('mobile-search-btn'),
+      mobileSearchOverlay: document.getElementById('mobile-search-overlay'),
+      mobileSearchInput: document.getElementById('mobile-search-input'),
+      mobileSearchClearBtn: document.getElementById('btn-mobile-search-clear'),
+      mobileSearchBackBtn: document.getElementById('btn-mobile-search-back'),
+      recentSearchList: document.getElementById('recent-search-list'),
+      exploreMainGenres: document.getElementById('explore-main-genres'),
+      exploreGenreDetail: document.getElementById('explore-genre-detail'),
+      btnExploreGenreBack: document.getElementById('btn-explore-genre-back'),
+      genreDetailTitle: document.getElementById('genre-detail-title'),
+      genreDetailDesc: document.getElementById('genre-detail-desc'),
+      genreTracksList: document.getElementById('genre-tracks-list'),
+      btnGenrePlayAll: document.getElementById('btn-genre-play-all'),
+      btnGenreShuffle: document.getElementById('btn-genre-shuffle'),
+      btnVideoTheater: document.getElementById('btn-video-theater'),
+      btnVideoFs: document.getElementById('btn-video-fs')
     };
   }
 
@@ -115,7 +123,7 @@ export class UIManager {
     }, 2800);
   }
 
-  switchView(viewName) {
+  switchView(viewName, pushHistory = true) {
     this.currentView = viewName;
     Object.keys(this.dom.views).forEach(key => {
       if (this.dom.views[key]) {
@@ -128,8 +136,27 @@ export class UIManager {
       btn.classList.toggle('active', btn.getAttribute('data-nav') === viewName);
     });
 
+    if (pushHistory && typeof window !== 'undefined' && window.history) {
+      try {
+        window.history.pushState({ view: viewName }, '', `#${viewName}`);
+      } catch (e) {}
+    }
+
     const scrollArea = document.getElementById('content-scroll-area');
     if (scrollArea) scrollArea.scrollTop = 0;
+  }
+
+  removeLike(trackId) {
+    if (!trackId) return;
+    if (this.likedTracksMap.has(trackId)) {
+      this.likedTracksMap.delete(trackId);
+      this.likedTrackIds.delete(trackId);
+      try {
+        localStorage.setItem('streamvance_liked_tracks', JSON.stringify(Array.from(this.likedTracksMap.values())));
+      } catch (e) {}
+      this.updateLikeButtons(trackId);
+      this.updateLikesCount();
+    }
   }
 
   toggleLike(track) {
@@ -232,7 +259,7 @@ export class UIManager {
   // 3. 아티스트 스포트라이트 (아래 아티스트를 좋아한다면)
   renderSpotlight(artistTracks) {
     if (!this.dom.spotlightTracksList) return;
-    this.dom.spotlightTracksList.innerHTML = artistTracks.slice(0, 6).map(track => `
+    this.dom.spotlightTracksList.innerHTML = artistTracks.slice(0, 18).map(track => `
       <div class="music-card" data-track-id="${track.id}">
         <div class="card-cover-wrapper">
           <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
@@ -303,6 +330,10 @@ export class UIManager {
         emptyMsg = '시청 / 감상 기록이 없습니다.';
         emptySub = '음악을 재생하면 여기에 자동으로 기록되어 언제든 다시 들을 수 있습니다.';
         icon = 'history';
+      } else if (tabType === 'local') {
+        emptyMsg = '추가된 로컬 음악이 없습니다.';
+        emptySub = '컴퓨터의 MP3, WAV, FLAC 오디오 파일을 보관함에 추가해보세요.';
+        icon = 'folder-open';
       }
 
       this.dom.libraryContent.innerHTML = `
@@ -310,6 +341,14 @@ export class UIManager {
           <i data-lucide="${icon}" style="width: 48px; height: 48px; margin-bottom: 14px; opacity: 0.5;"></i>
           <p style="font-size: 1.15rem; font-weight: 600; color: #fff;">${emptyMsg}</p>
           <p style="font-size: 0.88rem; margin-top: 6px;">${emptySub}</p>
+          ${tabType === 'local' ? `
+            <div style="margin-top: 20px;">
+              <button class="btn-add-local-empty" id="btn-add-local-file" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px; border-radius: 22px; background: #fff; color: #030303; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; box-shadow: 0 4px 14px rgba(255,255,255,0.2);">
+                <i data-lucide="upload-cloud"></i>
+                <span>내 PC 음원 추가 (MP3/WAV)</span>
+              </button>
+            </div>
+          ` : ''}
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
@@ -466,10 +505,16 @@ export class UIManager {
     this.dom.lyricsContainer.querySelectorAll('.lyric-line').forEach(el => {
       el.addEventListener('click', () => {
         const time = parseFloat(el.getAttribute('data-time'));
-        const track = this.player.getCurrentTrack();
-        if (!isNaN(time) && track && track.duration) {
-          const percent = Math.min(100, Math.max(0, (time / track.duration) * 100));
-          this.player.seekToPercent(percent);
+        if (!isNaN(time)) {
+          if (typeof this.player.seekTo === 'function') {
+            this.player.seekTo(time);
+          } else {
+            const track = this.player.getCurrentTrack();
+            if (track && track.duration) {
+              const percent = Math.min(100, Math.max(0, (time / track.duration) * 100));
+              this.player.seekToPercent(percent);
+            }
+          }
           this.showToast(`가사 위치(${this.formatTime(time)})로 이동`);
         }
       });
@@ -507,32 +552,133 @@ export class UIManager {
     }
   }
 
-  // 9. 관련 음악(Related) 렌더링
-  renderRelated(currentTrack, allTracks) {
-    if (!this.dom.relatedList) return;
-    const related = allTracks.filter(t => t.id !== currentTrack?.id).slice(0, 6);
-    this.dom.relatedList.innerHTML = related.map(track => `
-      <div class="track-row-card" data-track-id="${track.id}">
-        <div class="track-row-cover" style="width: 44px; height: 44px;">
-          <img src="${track.cover}" alt="${track.title}">
+  _createSearchTrackRow(track) {
+    const isCurrent = this.player.getCurrentTrack()?.id === track.id;
+    const isLiked = this.likedTrackIds.has(track.id);
+    return `
+      <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
+        <div class="track-row-cover">
+          <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
           <div class="cover-play-overlay">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-              <polygon points="6 4 20 12 6 20 6 4"></polygon>
-            </svg>
+            ${isCurrent && this.player.isPlaying 
+              ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
+              : '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>'
+            }
           </div>
         </div>
         <div class="track-row-info">
           <div class="track-row-title">${track.title}</div>
-          <div class="track-row-artist">${track.artist}</div>
+          <div class="track-row-artist">노래 • ${track.artist} ${track.duration ? '• ' + this.formatTime(track.duration) : ''}</div>
+        </div>
+        <div class="track-row-actions">
+          <button class="btn-track-action btn-inline-like ${isLiked ? 'liked' : ''}" data-action="like" title="좋아요">
+            <i data-lucide="thumbs-up"></i>
+          </button>
+          <button class="btn-track-action" data-action="queue" title="대기열에 추가">
+            <i data-lucide="list-plus"></i>
+          </button>
         </div>
       </div>
-    `).join('');
+    `;
   }
 
-  // 10. 검색 결과 렌더링
-  renderSearchResults(query, tracks, isSearchingOnline = false) {
+  // 9. 관련 음악(Related) 렌더링 (아티스트 및 장르/분위기 정밀 매칭)
+  renderRelated(currentTrack, allTracks) {
+    if (!this.dom.relatedList) return;
+    if (!currentTrack) {
+      this.dom.relatedList.innerHTML = `<p class="lyrics-placeholder">재생 중인 곡이 없습니다.</p>`;
+      return;
+    }
+
+    const curArtist = (currentTrack.artist || '').toLowerCase();
+    const curGenre = currentTrack.genre || '';
+    const curMood = currentTrack.mood || '';
+
+    // 1) 같은 아티스트 곡 우선 추출
+    const sameArtistTracks = allTracks.filter(t => 
+      t.id !== currentTrack.id && 
+      t.videoId !== currentTrack.videoId &&
+      (curArtist.length > 1 && (
+        (t.artist || '').toLowerCase().includes(curArtist) ||
+        curArtist.includes((t.artist || '').toLowerCase())
+      ))
+    );
+
+    // 2) 비슷한 장르 또는 분위기 곡 추출
+    const similarMoodTracks = allTracks.filter(t =>
+      t.id !== currentTrack.id &&
+      t.videoId !== currentTrack.videoId &&
+      !sameArtistTracks.some(sa => sa.id === t.id) &&
+      (t.genre === curGenre || t.mood === curMood)
+    );
+
+    // 3) 보충 추천 곡
+    const fallbackTracks = allTracks.filter(t =>
+      t.id !== currentTrack.id &&
+      t.videoId !== currentTrack.videoId &&
+      !sameArtistTracks.some(sa => sa.id === t.id) &&
+      !similarMoodTracks.some(sm => sm.id === t.id)
+    );
+
+    let html = '';
+
+    if (sameArtistTracks.length > 0) {
+      html += `
+        <div class="related-group" style="margin-bottom: 24px;">
+          <h3 class="related-subhead">${currentTrack.artist}의 다른 곡</h3>
+          <div class="related-tracks-sublist">
+            ${sameArtistTracks.slice(0, 4).map(track => this._createSearchTrackRow(track)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const combinedSimilar = [...similarMoodTracks, ...fallbackTracks].slice(0, 6);
+    if (combinedSimilar.length > 0) {
+      html += `
+        <div class="related-group">
+          <h3 class="related-subhead">비슷한 분위기의 맞춤 추천</h3>
+          <div class="related-tracks-sublist">
+            ${combinedSimilar.map(track => this._createSearchTrackRow(track)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    this.dom.relatedList.innerHTML = html || `<p class="lyrics-placeholder">관련 추천 음악을 찾는 중입니다...</p>`;
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  // 10. 검색 결과 렌더링 (아티스트 상위 검색결과 카드 + 노래 + 동영상 분리 - 스크린샷 2 일치)
+  renderSearchResults(query, searchData, isSearchingOnline = false) {
     if (!this.dom.searchResultsList) return;
     if (this.dom.searchQueryText) this.dom.searchQueryText.textContent = query;
+
+    let tracks = [];
+    let artistInfo = null;
+    let songs = [];
+    let videos = [];
+
+    if (Array.isArray(searchData)) {
+      tracks = searchData;
+      songs = tracks.filter(t => !t.isCompilation);
+      videos = tracks.filter(t => t.isCompilation);
+      // 아티스트 검색 감지: 트랙들의 아티스트와 검색어 일치 여부 확인
+      const qLower = query.toLowerCase().trim();
+      const matchArtistTrack = tracks.find(t => (t.artist || '').toLowerCase().includes(qLower) || qLower.includes((t.artist || '').toLowerCase()));
+      if (matchArtistTrack && qLower.length >= 2) {
+        artistInfo = {
+          name: matchArtistTrack.artist,
+          subscribers: '아티스트',
+          avatar: matchArtistTrack.cover
+        };
+      }
+    } else if (searchData && typeof searchData === 'object') {
+      tracks = searchData.tracks || [];
+      artistInfo = searchData.artist || null;
+      songs = searchData.songs || tracks.filter(t => !t.isCompilation);
+      videos = searchData.videos || tracks.filter(t => t.isCompilation);
+    }
 
     if (tracks.length === 0) {
       if (isSearchingOnline) {
@@ -541,7 +687,7 @@ export class UIManager {
             <div class="audio-equalizer-bars active" style="position: static; margin: 0 auto 16px auto; height: 24px;">
               <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
             </div>
-            <p style="font-size: 1.1rem; color: #fff;">YouTube에서 전 세계 음원을 실시간 검색하는 중...</p>
+            <p style="font-size: 1.1rem; color: #fff;">YouTube에서 공식 음원 및 아티스트를 검색하는 중...</p>
           </div>
         `;
         return;
@@ -555,28 +701,111 @@ export class UIManager {
       return;
     }
 
-    this.dom.searchResultsList.innerHTML = tracks.map(track => `
-      <div class="track-row-card" data-track-id="${track.id}">
-        <div class="track-row-cover">
-          <img src="${track.cover}" alt="${track.title}">
-          <div class="cover-play-overlay">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-              <polygon points="6 4 20 12 6 20 6 4"></polygon>
-            </svg>
+    let html = '';
+
+    // 1. 아티스트 상위 검색결과 카드 (스크린샷 2 100% 일치)
+    if (artistInfo && artistInfo.name) {
+      const topArtistTracks = (songs.length > 0 ? songs : tracks).slice(0, 3);
+      html += `
+        <div class="section-container" style="margin-bottom: 28px;">
+          <h2 class="section-title" style="font-size: 1.2rem; margin-bottom: 14px;">상위 검색결과</h2>
+          <div class="artist-top-card" id="artist-top-card" data-artist="${artistInfo.name}">
+            <div class="artist-top-header">
+              <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100';">
+              <div class="artist-top-info">
+                <div class="artist-top-name">${artistInfo.name}</div>
+                <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'}</div>
+              </div>
+            </div>
+            <div class="artist-top-actions">
+              <button class="btn-artist-action btn-shuffle" id="btn-search-artist-shuffle" title="아티스트 음악 전체 셔플">
+                <i data-lucide="shuffle" style="width: 16px; height: 16px;"></i>
+                <span>셔플</span>
+              </button>
+              <button class="btn-artist-action btn-station" id="btn-search-artist-station" title="아티스트 뮤직 스테이션 라디오">
+                <span style="font-size: 1.1rem; line-height: 1;">((•))</span>
+                <span>뮤직 스테이션</span>
+              </button>
+            </div>
+            <div class="artist-top-tracks">
+              ${topArtistTracks.map(t => this._createSearchTrackRow(t)).join('')}
+            </div>
           </div>
         </div>
-        <div class="track-row-info">
-          <div class="track-row-title">${track.title}</div>
-          <div class="track-row-artist">${track.artist} • ${track.album}</div>
+      `;
+      
+      const restSongs = songs.slice(3);
+      if (restSongs.length > 0) {
+        html += `
+          <div class="section-container" style="margin-bottom: 28px;">
+            <div class="section-header" style="margin-bottom: 12px;">
+              <h2 class="section-title">노래</h2>
+            </div>
+            <div class="search-songs-list">
+              ${restSongs.map(t => this._createSearchTrackRow(t)).join('')}
+            </div>
+          </div>
+        `;
+      }
+    } else {
+      // 일반 곡 검색: 노래 섹션
+      html += `
+        <div class="section-container" style="margin-bottom: 28px;">
+          <div class="section-header" style="margin-bottom: 12px;">
+            <h2 class="section-title">노래</h2>
+          </div>
+          <div class="search-songs-list">
+            ${(songs.length > 0 ? songs : tracks).map(t => this._createSearchTrackRow(t)).join('')}
+          </div>
         </div>
-        <span class="track-row-duration">${this.formatTime(track.duration)}</span>
-        <button class="btn-track-action" data-action="queue" title="대기열에 추가">
-          <i data-lucide="list-plus"></i>
-        </button>
-      </div>
-    `).join('');
+      `;
+    }
 
+    // 동영상 / 컴필레이션 섹션 (스크린샷 1 일치)
+    if (videos.length > 0) {
+      html += `
+        <div class="section-container" style="margin-top: 24px;">
+          <div class="section-header" style="margin-bottom: 12px;">
+            <h2 class="section-title">동영상</h2>
+          </div>
+          <div class="search-videos-list">
+            ${videos.map(t => this._createSearchTrackRow(t)).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    this.dom.searchResultsList.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  // 11. 둘러보기 분위기/장르 상세 패널 렌더링
+  renderGenreDetail(genreName, genreColor, tracks) {
+    if (!this.dom.exploreGenreDetail || !this.dom.exploreMainGenres) return;
+    this.dom.exploreMainGenres.style.display = 'none';
+    this.dom.exploreGenreDetail.style.display = 'block';
+
+    if (this.dom.genreDetailTitle) this.dom.genreDetailTitle.textContent = genreName;
+    if (this.dom.genreDetailDesc) this.dom.genreDetailDesc.textContent = `${genreName} 분위기에 맞춘 실시간 추천 트랙 컬렉션입니다.`;
+
+    const hero = document.getElementById('genre-detail-hero');
+    if (hero && genreColor) {
+      hero.style.background = `linear-gradient(135deg, ${genreColor} 0%, rgba(20, 20, 30, 0.95) 100%)`;
+    }
+
+    if (this.dom.genreTracksList) {
+      if (!tracks || tracks.length === 0) {
+        this.dom.genreTracksList.innerHTML = `<p class="lyrics-placeholder">추천 곡을 불러오는 중입니다...</p>`;
+      } else {
+        this.dom.genreTracksList.innerHTML = tracks.map(track => this._createSearchTrackRow(track)).join('');
+      }
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  closeGenreDetail() {
+    if (this.dom.exploreGenreDetail) this.dom.exploreGenreDetail.style.display = 'none';
+    if (this.dom.exploreMainGenres) this.dom.exploreMainGenres.style.display = 'block';
   }
 
   // 현재 재생 중인 트랙 UI 업데이트
@@ -594,12 +823,24 @@ export class UIManager {
 
     this.updateLikeButtons(track.id);
 
-    // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관
+    // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관 (가사 대용량 배열 제외하여 쿼터 안전 보장)
     const existingIndex = this.playHistory.findIndex(t => t.id === track.id || (t.videoId && t.videoId === track.videoId));
     if (existingIndex >= 0) {
       this.playHistory.splice(existingIndex, 1);
     }
-    this.playHistory.unshift(track);
+    const cleanHistoryTrack = {
+      id: track.id,
+      videoId: track.videoId,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || '',
+      duration: track.duration || 0,
+      cover: track.cover,
+      genre: track.genre || 'pop',
+      mood: track.mood || 'energy',
+      audioUrl: track.audioUrl || null
+    };
+    this.playHistory.unshift(cleanHistoryTrack);
     if (this.playHistory.length > 50) this.playHistory.pop();
     try {
       localStorage.setItem('streamvance_play_history', JSON.stringify(this.playHistory));
@@ -658,10 +899,17 @@ export class UIManager {
     });
   }
 
-  updateProgressUI(currentTime, duration, percent) {
+  updateProgressUI(currentTime, duration, percent, bufferPercent = 0) {
     if (this.dom.currentTimeText) this.dom.currentTimeText.textContent = this.formatTime(currentTime);
     if (this.dom.durationTimeText && duration > 0) this.dom.durationTimeText.textContent = this.formatTime(duration);
     if (this.dom.progressBar) this.dom.progressBar.style.width = `${percent}%`;
+    
+    // 버퍼 진행 바 갱신
+    const bufferBar = document.getElementById('seek-buffer-bar');
+    if (bufferBar && bufferPercent > 0) {
+      bufferBar.style.width = `${Math.min(100, Math.max(0, bufferPercent))}%`;
+    }
+
     if (this.dom.seekSlider && !this.isSeeking) {
       this.dom.seekSlider.value = percent;
     }

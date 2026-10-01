@@ -84,10 +84,15 @@
         </div>
       </div>
 
-      <!-- 3. 우측 끝: 캐스트, 업로드, 프로필 아바타 / 로그인 버튼 -->
+      <!-- 3. 우측 끝: 모바일 검색, 캐스트, 업로드, 프로필 아바타 / 로그인 버튼 -->
       <div class="ytm-header-right" style="position: relative;">
+        <!-- 모바일 전용 돋보기 검색 버튼 (Screenshot 3 일치) -->
+        <button class="ytm-action-icon-btn mobile-search-btn" id="mobile-search-btn" title="검색">
+          <i data-lucide="search"></i>
+        </button>
+
         <!-- 캐스트 아이콘 -->
-        <button class="ytm-action-icon-btn" title="기기에 연결">
+        <button class="ytm-action-icon-btn" id="btn-cast-device" title="기기에 연결">
           <i data-lucide="cast"></i>
         </button>
 
@@ -148,6 +153,27 @@
       <input type="file" id="local-audio-input" accept="audio/*" multiple style="display: none;">
     </header>
 
+    <!-- 모바일 검색 풀스크린 오버레이 (Screenshot 3 100% 일치) -->
+    <div class="mobile-search-overlay" id="mobile-search-overlay" style="display: none;">
+      <div class="mobile-search-top-bar">
+        <button class="mobile-search-back-btn" id="btn-mobile-search-back" title="뒤로가기">
+          <i data-lucide="arrow-left"></i>
+        </button>
+        <div class="mobile-search-input-box">
+          <input type="text" id="mobile-search-input" placeholder="노래, 아티스트, 팟캐스트..." autocomplete="off">
+          <button class="mobile-search-clear-btn" id="btn-mobile-search-clear" style="display: none;" title="검색어 지우기">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+      </div>
+      <div class="mobile-search-body">
+        <div class="recent-search-header">최근 검색어</div>
+        <div class="recent-search-list" id="recent-search-list">
+          <!-- JS 동적 렌더링 -->
+        </div>
+      </div>
+    </div>
+
     <!-- 모바일 사이드 드로어 네비게이션 -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
@@ -185,6 +211,21 @@
         
         <!-- 1. 홈 뷰 (Home View) -->
         <section class="view-panel active" id="view-home">
+
+          <!-- 분위기 및 활동 무드 필터 칩 바 (YouTube Music 스크린샷 3 100% 일치) -->
+          <div class="mood-chips-container" id="mood-chips-container">
+            <div class="mood-chips-scroll" id="mood-chips-scroll">
+              <button class="mood-chip active" data-mood="all">전체</button>
+              <button class="mood-chip" data-mood="sleep">잠잘 때</button>
+              <button class="mood-chip" data-mood="chill">휴식</button>
+              <button class="mood-chip" data-mood="energy">에너지 충전</button>
+              <button class="mood-chip" data-mood="happy">행복한 기분</button>
+              <button class="mood-chip" data-mood="workout">운동</button>
+              <button class="mood-chip" data-mood="focus">집중</button>
+              <button class="mood-chip" data-mood="commute">출퇴근/통학</button>
+              <button class="mood-chip" data-mood="ballad">로맨스</button>
+            </div>
+          </div>
           
           <!-- YouTube Music PC 스타일 개인화 환영 배너 (스크린샷 100% 일치) -->
           <div class="user-welcome-banner" id="user-welcome-banner" style="display: none;">
@@ -195,6 +236,10 @@
               <span class="welcome-subtitle">시작을 위한 음악</span>
               <h1 class="welcome-title"><span id="welcome-user-name">사용자</span>님, 환영합니다.</h1>
             </div>
+            <button class="welcome-taste-btn" id="btn-taste-dna" title="내 음악 취향 DNA 분석">
+              <i data-lucide="sparkles"></i>
+              <span>취향 DNA</span>
+            </button>
           </div>
 
           <!-- 섹션 1: 빠른 선곡 (YouTube Music 스크린샷 100% 일치) -->
@@ -205,6 +250,9 @@
                 <h2 class="section-title">빠른 선곡</h2>
               </div>
               <div class="section-controls">
+                <button class="section-text-btn" id="btn-play-all-quick" title="빠른 선곡 전체 재생">
+                  <i data-lucide="play" style="width: 14px; height: 14px; margin-right: 4px;"></i> 모두 재생
+                </button>
                 <button class="section-arrow-btn" id="btn-refresh-quick-picks" title="새로운 맞춤곡 추천 새로고침">
                   <i data-lucide="rotate-cw"></i>
                 </button>
@@ -255,8 +303,8 @@
                 </div>
               </div>
               <div class="section-controls">
-                <button class="section-arrow-btn" title="이전"><i data-lucide="chevron-left"></i></button>
-                <button class="section-arrow-btn" title="다음"><i data-lucide="chevron-right"></i></button>
+                <button class="section-arrow-btn" id="btn-spotlight-prev" title="이전"><i data-lucide="chevron-left"></i></button>
+                <button class="section-arrow-btn" id="btn-spotlight-next" title="다음"><i data-lucide="chevron-right"></i></button>
               </div>
             </div>
 
@@ -299,16 +347,48 @@
             </div>
           </div>
 
-          <div class="section-container">
+          <div class="section-container" id="explore-main-genres">
             <h2 class="section-title">분위기 및 장르</h2>
             <div class="genre-cards-grid" id="genre-grid"></div>
+          </div>
+
+          <!-- 둘러보기 분위기/장르 상세 맞춤 음악 추천 패널 (홈으로 튕기지 않고 전용 추천 제공) -->
+          <div class="explore-genre-detail" id="explore-genre-detail" style="display: none;">
+            <div class="genre-detail-top-nav">
+              <button class="btn-genre-detail-back" id="btn-explore-genre-back">
+                <i data-lucide="arrow-left"></i>
+                <span>모든 분위기 및 장르</span>
+              </button>
+            </div>
+            <div class="genre-detail-hero" id="genre-detail-hero">
+              <span class="genre-detail-badge" id="genre-detail-badge">GENRE</span>
+              <h1 class="genre-detail-title" id="genre-detail-title">장르명</h1>
+              <p class="genre-detail-desc" id="genre-detail-desc">추천 음악 컬렉션</p>
+              <div class="genre-detail-actions">
+                <button class="btn-genre-play-all" id="btn-genre-play-all">
+                  <i data-lucide="play" style="fill: currentColor; width: 16px; height: 16px;"></i> 모두 재생
+                </button>
+                <button class="btn-genre-shuffle" id="btn-genre-shuffle">
+                  <i data-lucide="shuffle" style="width: 16px; height: 16px;"></i> 셔플 재생
+                </button>
+              </div>
+            </div>
+            <div class="section-container" style="margin-top: 24px;">
+              <h2 class="section-title">추천 트랙</h2>
+              <div class="genre-tracks-list" id="genre-tracks-list"></div>
+            </div>
           </div>
         </section>
 
         <!-- 3. 보관함 (Library View) -->
         <section class="view-panel" id="view-library">
           <div class="library-header">
-            <h1 class="library-title">보관함</h1>
+            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+              <h1 class="library-title">보관함</h1>
+              <button class="section-text-btn" id="btn-library-upload" title="내 PC 음원 추가">
+                <i data-lucide="upload-cloud" style="width: 15px; height: 15px; margin-right: 5px;"></i> 파일 추가
+              </button>
+            </div>
             <div class="library-tabs">
               <button class="lib-tab active" data-lib="likes">좋아요 표시한 곡 (<span id="likes-count">0</span>)</button>
               <button class="lib-tab" data-lib="history">최근 재생한 곡</button>
@@ -371,7 +451,7 @@
             </svg>
           </button>
           
-          <button class="ctrl-btn" id="btn-next" title="다음 곡 (L)">
+          <button class="ctrl-btn" id="btn-next" title="다음 곡 (N)">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <polygon points="5 4 15 12 5 20 5 4"></polygon>
               <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
@@ -430,6 +510,10 @@
             <i data-lucide="shuffle"></i>
           </button>
 
+          <button class="ctrl-btn" id="btn-open-queue" title="다음 트랙 대기열">
+            <i data-lucide="list-music"></i>
+          </button>
+
           <button class="ctrl-btn" id="btn-expand-player" title="가사 및 대기열 열기">
             <i data-lucide="chevron-up"></i>
           </button>
@@ -483,6 +567,16 @@
             <!-- Video 모드: 광고 없이 실시간 가사와 완벽 동기화되는 유튜브 플레이어 -->
             <div class="modal-video-wrap" id="modal-video-wrap">
               <div id="youtube-player-hidden"></div>
+              <!-- 동영상 화면 제어 툴바: 대형 영상 모드, 전체화면 버튼 (사용자 요청) -->
+              <div class="video-corner-actions" id="video-corner-actions">
+                <button class="art-corner-btn btn-video-theater" id="btn-video-theater" title="대형 영상 모드 (영상 확대 / 가사 소형화)">
+                  <i data-lucide="expand"></i>
+                  <span class="video-btn-label">대형 영상 모드</span>
+                </button>
+                <button class="art-corner-btn btn-video-fs" id="btn-video-fs" title="전체화면">
+                  <i data-lucide="maximize"></i>
+                </button>
+              </div>
             </div>
           </div>
 

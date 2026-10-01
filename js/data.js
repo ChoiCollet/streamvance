@@ -16,7 +16,7 @@ export const sampleTracks = [
     duration: 179,
     cover: "https://i.ytimg.com/vi/9wUKhEgnllc/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-blue-flame",
@@ -29,7 +29,7 @@ export const sampleTracks = [
     duration: 201,
     cover: "https://i.ytimg.com/vi/f0FDOw3zvGo/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-why-not",
@@ -55,7 +55,7 @@ export const sampleTracks = [
     duration: 284,
     cover: "https://i.ytimg.com/vi/3_nnLq4D3tc/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-dial-number",
@@ -81,7 +81,7 @@ export const sampleTracks = [
     duration: 188,
     cover: "https://i.ytimg.com/vi/pXbugSyo0tI/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-new-thing",
@@ -94,7 +94,7 @@ export const sampleTracks = [
     duration: 147,
     cover: "https://i.ytimg.com/vi/azaZt7eccnc/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-still-love-you",
@@ -107,7 +107,7 @@ export const sampleTracks = [
     duration: 252,
     cover: "https://i.ytimg.com/vi/50TvhCxOyIc/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
 
   // 2. 다시 듣기 / 글로벌 메가 히트
@@ -122,7 +122,7 @@ export const sampleTracks = [
     duration: 173,
     cover: "https://i.ytimg.com/vi/ekr2nIex040/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-supernova",
@@ -135,7 +135,7 @@ export const sampleTracks = [
     duration: 179,
     cover: "https://i.ytimg.com/vi/phuiiNCxRMg/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-whiplash",
@@ -148,7 +148,7 @@ export const sampleTracks = [
     duration: 184,
     cover: "https://i.ytimg.com/vi/jWQx2f-CErU/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-power",
@@ -161,7 +161,7 @@ export const sampleTracks = [
     duration: 153,
     cover: "https://i.ytimg.com/vi/NMjhjrBIrG8/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-ditto",
@@ -174,7 +174,7 @@ export const sampleTracks = [
     duration: 186,
     cover: "https://i.ytimg.com/vi/Km71Rr9K-Bw/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-hurt",
@@ -187,7 +187,7 @@ export const sampleTracks = [
     duration: 178,
     cover: "https://i.ytimg.com/vi/tVIXY14aJms/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-day6-welcome",
@@ -200,7 +200,7 @@ export const sampleTracks = [
     duration: 217,
     cover: "https://i.ytimg.com/vi/RowlrvmyFEk/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-day6-time",
@@ -213,7 +213,7 @@ export const sampleTracks = [
     duration: 205,
     cover: "https://i.ytimg.com/vi/vnS_jn2uibs/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   },
   {
     id: "track-die-with-a-smile",
@@ -226,7 +226,7 @@ export const sampleTracks = [
     duration: 251,
     cover: "https://i.ytimg.com/vi/kPa7bsKwL-c/hqdefault.jpg",
     lyrics: [],
-    isLiked: true
+    isLiked: false
   }
 ];
 

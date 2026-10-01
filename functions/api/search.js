@@ -54,11 +54,24 @@ async function scrapeYouTube(query) {
 
   const data = JSON.parse(match[1]);
   const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
-  const items = [];
+  const songs = [];
+  const compilations = [];
+  let artistInfo = null;
 
   for (const section of contents) {
     const itemSection = section?.itemSectionRenderer?.contents || [];
     for (const item of itemSection) {
+      if (item?.channelRenderer && !artistInfo) {
+        const cr = item.channelRenderer;
+        const name = cr.title?.simpleText || cr.title?.runs?.[0]?.text || '';
+        const subs = cr.subscriberCountText?.simpleText || cr.subscriberCountText?.runs?.[0]?.text || '아티스트';
+        const thumbs = cr.thumbnail?.thumbnails || [];
+        const avatar = thumbs.length > 0 ? thumbs[thumbs.length - 1].url : '';
+        if (name) {
+          artistInfo = { name, subscribers: subs, avatar };
+        }
+      }
+
       const v = item?.videoRenderer;
       if (!v || !v.videoId) continue;
 
@@ -71,9 +84,10 @@ async function scrapeYouTube(query) {
       const thumbnails = v.thumbnail?.thumbnails || [];
       const cover = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-      // 15초 초과 음원만 수집 (Shorts 제외)
+      const isCompilation = (durationSec > 600) || /playlist|플레이리스트|노래 모음|전곡 모음|1시간|1 hour|모음집|연속/i.test(title);
+
       if (durationSec > 15) {
-        items.push({
+        const trackObj = {
           id: `yt-${videoId}`,
           videoId: videoId,
           title: cleanTitle(title),
@@ -84,16 +98,25 @@ async function scrapeYouTube(query) {
           duration: durationSec,
           cover: cover,
           lyrics: [],
-          isLiked: false
-        });
-
-        if (items.length >= 25) break;
+          isLiked: false,
+          isCompilation
+        };
+        if (isCompilation) {
+          compilations.push(trackObj);
+        } else {
+          songs.push(trackObj);
+        }
       }
     }
-    if (items.length >= 25) break;
   }
 
-  return items;
+  const allTracks = [...songs, ...compilations];
+  return {
+    artist: artistInfo,
+    tracks: allTracks.slice(0, 30),
+    songs: songs.slice(0, 20),
+    videos: compilations.slice(0, 15)
+  };
 }
 
 // 2. Invidious 공개 인스턴스 검색 (유튜브 차단 시 자동 폴백)

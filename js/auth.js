@@ -13,12 +13,20 @@ export class AuthManager {
     const savedClientId = localStorage.getItem('streamvance_google_client_id');
     this.clientId = savedClientId || DEFAULT_GOOGLE_CLIENT_ID;
     
+    this.allTracks = [];
+    
     // 로컬 스토리지에서 이전 로그인 세션 복구
     this.loadSession();
     // UI 동기화
     this.updateUserUI();
     // Google OAuth 콜백 감지
     this.checkOAuthCallback();
+  }
+
+  setAllTracks(tracks) {
+    if (Array.isArray(tracks)) {
+      this.allTracks = tracks;
+    }
   }
 
   loadSession() {
@@ -423,7 +431,7 @@ export class AuthManager {
 
   // 취향 맞춤 믹스 즉시 재생
   playSmartTasteMix(topMood, topGenre) {
-    const all = this.player.queue || [];
+    const all = (this.allTracks && this.allTracks.length > 0) ? this.allTracks : (this.player.queue || []);
     // 상위 무드나 장르에 맞는 곡들을 우선 배치
     const matched = all.filter(t => t.mood === topMood || t.genre === topGenre);
     const others = all.filter(t => t.mood !== topMood && t.genre !== topGenre);

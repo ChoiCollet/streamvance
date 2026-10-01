@@ -1352,6 +1352,24 @@ a {
   overflow-y: auto;
 }
 
+.google-dialog-logo {
+  margin-bottom: 16px;
+}
+
+.google-dialog-body {
+  margin-top: 24px;
+}
+
+.google-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-guest-login:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
 /* 내 음악 취향 DNA 리포트 다이얼로그 (고화질 다크 글래스 카드) */
 .taste-dna-dialog {
   position: relative;
@@ -2687,3 +2705,872 @@ a {
     padding: 16px 16px 140px 16px;
   }
 }
+
+/* ==========================================================================
+   추가 핵심 컴포넌트 스타일 (둘러보기, 보관함, 검색, 대기열, 이퀄라이저, 취향 DNA)
+   ========================================================================== */
+
+/* 1. 오디오 이퀄라이저 애니메이션 바 */
+.audio-equalizer-bars {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 4px;
+  z-index: 2;
+}
+
+.audio-equalizer-bars.active {
+  display: flex;
+}
+
+.audio-equalizer-bars .bar {
+  width: 3px;
+  height: 14px;
+  background: #ff0000;
+  border-radius: 2px;
+  animation: eqBounce 1.2s ease-in-out infinite alternate;
+}
+
+.audio-equalizer-bars .bar:nth-child(1) { animation-delay: 0.1s; height: 10px; }
+.audio-equalizer-bars .bar:nth-child(2) { animation-delay: 0.3s; height: 16px; }
+.audio-equalizer-bars .bar:nth-child(3) { animation-delay: 0.2s; height: 12px; }
+.audio-equalizer-bars .bar:nth-child(4) { animation-delay: 0.4s; height: 8px; }
+
+@keyframes eqBounce {
+  0% { transform: scaleY(0.2); }
+  100% { transform: scaleY(1); }
+}
+
+/* 2. 둘러보기 (Explore) 히어로 배너 */
+.explore-hero-banner {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 36px 32px;
+  margin-bottom: 36px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 620px;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #ff0000;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.hero-title {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #fff;
+  line-height: 1.2;
+  margin-bottom: 10px;
+  font-family: 'Outfit', sans-serif;
+}
+
+.hero-desc {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.btn-hero-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: #fff;
+  color: #030303;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 28px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), background-color 0.2s;
+}
+
+.btn-hero-play:hover {
+  transform: scale(1.05);
+  background: #f0f0f0;
+}
+
+/* 둘러보기 장르 카드 그리드 */
+.genre-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* 3. 보관함 (Library) 뷰 */
+.library-header {
+  margin-bottom: 24px;
+}
+
+.library-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.5px;
+}
+
+.library-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.lib-tab {
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.lib-tab:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.lib-tab.active {
+  background: #fff;
+  color: #030303;
+  font-weight: 700;
+  border-color: #fff;
+}
+
+.library-content-container {
+  min-height: 300px;
+}
+
+/* 4. 검색 결과 (Search) 뷰 */
+.search-header {
+  margin-bottom: 24px;
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 5. 대기열 (Queue) 탭 패널 */
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+
+.queue-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.queue-source-title {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.queue-count {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.queue-track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: calc(100vh - 220px);
+  padding: 8px 8px 120px 8px;
+}
+
+.btn-subtle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-subtle:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* 6. 관련 음악 (Related) 탭 패널 */
+.related-container {
+  padding: 16px 8px;
+}
+
+.related-subhead {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding-left: 8px;
+}
+
+.related-tracks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 7. 가사 플레이스홀더 & 헤더 버튼 */
+.lyrics-placeholder {
+  color: var(--text-muted);
+  font-size: 1rem;
+  text-align: center;
+  padding: 60px 16px;
+}
+
+.icon-btn-modal {
+  background: transparent;
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.icon-btn-modal:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 8. 취향 DNA 버튼 & 컨텐츠 */
+.welcome-taste-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  margin-left: auto;
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.2) 0%, rgba(121, 40, 202, 0.2) 100%);
+  border: 1px solid rgba(255, 0, 85, 0.4);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.welcome-taste-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.35) 0%, rgba(121, 40, 202, 0.35) 100%);
+  border-color: rgba(255, 0, 85, 0.7);
+  transform: translateY(-1px);
+}
+
+.taste-analysis-content {
+  overflow-y: auto;
+  max-height: calc(85vh - 120px);
+  padding-right: 4px;
+}
+
+/* 9. 모바일 사이드바 네비게이션 */
+.sidebar-brand {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-brand .brand-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: #fff;
+}
+
+.sidebar-brand .brand-name {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.5px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  gap: 4px;
+}
+
+.sidebar-nav .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  width: 100%;
+  text-align: left;
+}
+
+.sidebar-nav .nav-item:hover,
+.sidebar-nav .nav-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.sidebar-nav .nav-item.active {
+  font-weight: 700;
+}
+
+/* 10. Repeat One 하이라이트 */
+.ctrl-btn.repeat-one,
+.mobile-ctrl-btn.repeat-one {
+  color: #ff0000 !important;
+}
+
+/* ========================================================================== */
+/* 11. Mood / Activity Chips Bar (YouTube Music Screenshot 3 100% Match)      */
+/* ========================================================================== */
+.mood-chips-container {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.mood-chips-scroll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 10px 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mood-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.mood-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f1f1f1;
+  padding: 7px 15px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  user-select: none;
+}
+
+.mood-chip:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.mood-chip.active {
+  background: #ffffff;
+  color: #030303;
+  border-color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+}
+
+/* ========================================================================== */
+/* 12. Mobile Search Trigger & Fullscreen Overlay (Screenshot 3 Match)       */
+/* ========================================================================== */
+.mobile-search-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-search-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+  }
+}
+
+.mobile-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: #030303;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  animation: fadeInSearch 0.18s ease-out;
+}
+
+@keyframes fadeInSearch {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mobile-search-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mobile-search-back-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.mobile-search-back-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-search-input-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: #2a2a2a;
+  border-radius: 20px;
+  padding: 0 14px;
+  height: 40px;
+}
+
+.mobile-search-input-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.mobile-search-input-box input::placeholder {
+  color: #888;
+}
+
+.mobile-search-clear-btn {
+  background: transparent;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.mobile-search-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.recent-search-header {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #aaaaaa;
+  margin-bottom: 12px;
+}
+
+.recent-search-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 4px;
+  color: #f1f1f1;
+  font-size: 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+}
+
+.recent-search-item:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.recent-search-item-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.recent-search-item-left i {
+  color: #717171;
+  width: 18px;
+  height: 18px;
+}
+
+/* ========================================================================== */
+/* 13. Artist Top Result Card (YouTube Music Screenshot 2 100% Match)         */
+/* ========================================================================== */
+.artist-top-card {
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 30px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.artist-top-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.artist-top-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  flex-shrink: 0;
+}
+
+.artist-top-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.artist-top-name {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.artist-top-subs {
+  font-size: 0.88rem;
+  color: #aaaaaa;
+}
+
+.artist-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.btn-artist-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border-radius: 20px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.btn-artist-action:hover {
+  transform: scale(1.03);
+}
+
+.btn-artist-action.btn-shuffle {
+  background: #ffffff;
+  color: #030303;
+}
+
+.btn-artist-action.btn-station {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.artist-top-tracks {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+/* ========================================================================== */
+/* 14. Explore Genre Detail View (Dedicated Recommendation)                   */
+/* ========================================================================== */
+.explore-genre-detail {
+  padding-bottom: 50px;
+  animation: fadeInDetail 0.2s ease-out;
+}
+
+@keyframes fadeInDetail {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.genre-detail-top-nav {
+  margin-bottom: 20px;
+}
+
+.btn-genre-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-genre-detail-back:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.genre-detail-hero {
+  border-radius: 16px;
+  padding: 40px 36px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.85) 0%, rgba(25, 20, 35, 0.95) 100%);
+  margin-bottom: 28px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+}
+
+.genre-detail-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  color: #fff;
+}
+
+.genre-detail-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.genre-detail-desc {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 24px;
+  max-width: 600px;
+  line-height: 1.5;
+}
+
+.genre-detail-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-genre-play-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 22px;
+  background: #ffffff;
+  color: #030303;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.btn-genre-play-all:hover {
+  transform: scale(1.04);
+}
+
+.btn-genre-shuffle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.btn-genre-shuffle:hover {
+  transform: scale(1.04);
+}
+
+/* ========================================================================== */
+/* 15. Video Theater Mode & Corner Actions (User Request)                     */
+/* ========================================================================== */
+.video-corner-actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-video-wrap:hover .video-corner-actions,
+.modal-video-wrap.active:hover .video-corner-actions {
+  opacity: 1;
+}
+
+.btn-video-theater {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  padding: 7px 14px;
+  border-radius: 18px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.btn-video-theater:hover {
+  background: rgba(0, 0, 0, 0.95);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.04);
+}
+
+.btn-video-fs {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.btn-video-fs:hover {
+  background: rgba(0, 0, 0, 0.95);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.08);
+}
+
+/* 대형 영상 모드 (Theater Mode): 영상 확대 및 가사 소형 컴팩트화 */
+.modal-theater-mode .modal-body {
+  gap: 24px !important;
+  padding: 16px 36px 20px 36px !important;
+}
+
+.modal-theater-mode .modal-visual-panel {
+  flex: 3 !important;
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.modal-theater-mode .stage-media-wrap {
+  max-width: 100% !important;
+}
+
+.modal-theater-mode .modal-video-wrap.active {
+  max-width: 100% !important;
+  height: calc(100vh - 210px) !important;
+  max-height: 750px !important;
+}
+
+.modal-theater-mode .modal-content-panel {
+  flex: 1 !important;
+  max-width: 360px !important;
+  min-width: 260px !important;
+}
+
+.modal-theater-mode .lyric-line {
+  font-size: 1.15rem !important;
+  margin: 10px 0 !important;
+  line-height: 1.4 !important;
+}
+
+/* ========================================================================== */
+/* 16. Spotlight Tracks Horizontal Scrolling                                  */
+/* ========================================================================== */
+#spotlight-tracks-list {
+  display: flex !important;
+  gap: 16px !important;
+  overflow-x: auto !important;
+  padding-bottom: 12px !important;
+  scrollbar-width: thin !important;
+  scroll-behavior: smooth !important;
+}
+
+#spotlight-tracks-list .music-card {
+  flex: 0 0 170px !important;
+}
+

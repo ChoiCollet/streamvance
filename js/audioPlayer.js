@@ -16,6 +16,7 @@ export class AudioPlayer {
     this.volume = 0.8;
     this.isMuted = false;
     this.syncInterval = null;
+    this.loadRetryTimer = null;
 
     // Callbacks
     this.callbacks = {
@@ -117,8 +118,12 @@ export class AudioPlayer {
         const current = this.audio.currentTime;
         const duration = this.audio.duration || 0;
         const percent = duration > 0 ? (current / duration) * 100 : 0;
+        let bufferPercent = 0;
+        if (this.audio.buffered && this.audio.buffered.length > 0 && duration > 0) {
+          bufferPercent = Math.min(100, (this.audio.buffered.end(this.audio.buffered.length - 1) / duration) * 100);
+        }
         if (this.callbacks.onTimeUpdate) {
-          this.callbacks.onTimeUpdate(current, duration, percent);
+          this.callbacks.onTimeUpdate(current, duration, percent, bufferPercent);
         }
       }
     });
@@ -142,12 +147,18 @@ export class AudioPlayer {
     this.stopProgressSync();
     this.syncInterval = setInterval(() => {
       if (this.ytPlayer && this.ytPlayer.getCurrentTime && !this.isCurrentLocal()) {
-        const current = this.ytPlayer.getCurrentTime() || 0;
-        const duration = this.ytPlayer.getDuration() || (this.getCurrentTrack()?.duration || 0);
-        const percent = duration > 0 ? (current / duration) * 100 : 0;
-        if (this.callbacks.onTimeUpdate) {
-          this.callbacks.onTimeUpdate(current, duration, percent);
-        }
+        try {
+          const current = this.ytPlayer.getCurrentTime() || 0;
+          const duration = this.ytPlayer.getDuration() || (this.getCurrentTrack()?.duration || 0);
+          const percent = duration > 0 ? (current / duration) * 100 : 0;
+          let bufferPercent = 0;
+          if (this.ytPlayer.getVideoLoadedFraction) {
+            bufferPercent = Math.min(100, (this.ytPlayer.getVideoLoadedFraction() || 0) * 100);
+          }
+          if (this.callbacks.onTimeUpdate) {
+            this.callbacks.onTimeUpdate(current, duration, percent, bufferPercent);
+          }
+        } catch (e) {}
       }
     }, 250);
   }
@@ -164,6 +175,34 @@ export class AudioPlayer {
       return this.queue[this.currentIndex];
     }
     return null;
+  }
+
+  getCurrentTime() {
+    if (this.isCurrentLocal()) {
+      return this.audio.currentTime || 0;
+    }
+    if (this.ytPlayer && this.ytPlayer.getCurrentTime) {
+      try {
+        return this.ytPlayer.getCurrentTime() || 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  getDuration() {
+    if (this.isCurrentLocal()) {
+      return this.audio.duration || this.getCurrentTrack()?.duration || 0;
+    }
+    if (this.ytPlayer && this.ytPlayer.getDuration) {
+      try {
+        return this.ytPlayer.getDuration() || (this.getCurrentTrack()?.duration || 0);
+      } catch (e) {
+        return this.getCurrentTrack()?.duration || 0;
+      }
+    }
+    return this.getCurrentTrack()?.duration || 0;
   }
 
   setQueue(newQueue, startIndex = 0, autoPlay = true) {
@@ -187,6 +226,11 @@ export class AudioPlayer {
   loadTrack(track, autoPlay = true) {
     if (!track) return;
 
+    if (this.loadRetryTimer) {
+      clearInterval(this.loadRetryTimer);
+      this.loadRetryTimer = null;
+    }
+
     // 양쪽 정지 후 로드
     this.audio.pause();
 
@@ -200,9 +244,10 @@ export class AudioPlayer {
         }
       } else {
         // 아직 YT가 준비되지 않았을 경우 대기 후 재시도
-        const retryTimer = setInterval(() => {
+        this.loadRetryTimer = setInterval(() => {
           if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
-            clearInterval(retryTimer);
+            clearInterval(this.loadRetryTimer);
+            this.loadRetryTimer = null;
             if (autoPlay) {
               this.ytPlayer.loadVideoById(track.videoId);
             } else {
@@ -268,7 +313,12 @@ export class AudioPlayer {
 
     let nextIndex = this.currentIndex + 1;
     if (nextIndex >= this.queue.length) {
-      if (this.repeatMode === 'all' || force) {
+      if (typeof this.callbacks.onQueueNearEnd === 'function') {
+        this.callbacks.onQueueNearEnd();
+      }
+      if (this.currentIndex + 1 < this.queue.length) {
+        nextIndex = this.currentIndex + 1;
+      } else if (this.repeatMode === 'all' || force) {
         nextIndex = 0;
       } else {
         if (this.ytPlayer && this.ytPlayer.pauseVideo) this.ytPlayer.pauseVideo();
@@ -316,6 +366,15 @@ export class AudioPlayer {
     }
   }
 
+  seekTo(seconds) {
+    const target = Math.max(0, seconds);
+    if (this.isCurrentLocal()) {
+      this.audio.currentTime = Math.min(this.audio.duration || target, target);
+    } else if (this.ytPlayer && this.ytPlayer.seekTo) {
+      this.ytPlayer.seekTo(target, true);
+    }
+  }
+
   seekRelative(seconds) {
     const track = this.getCurrentTrack();
     if (track?.videoId && this.ytPlayer && this.ytPlayer.getCurrentTime) {
@@ -357,18 +416,23 @@ export class AudioPlayer {
     }
   }
 
+  applyShuffle() {
+    const currentTrack = this.getCurrentTrack();
+    const remaining = this.queue.filter(t => t.id !== currentTrack?.id);
+    for (let i = remaining.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+    }
+    this.queue = currentTrack ? [currentTrack, ...remaining] : remaining;
+    this.currentIndex = currentTrack ? 0 : -1;
+  }
+
   toggleShuffle() {
     this.isShuffle = !this.isShuffle;
     const currentTrack = this.getCurrentTrack();
 
     if (this.isShuffle) {
-      const remaining = this.queue.filter(t => t.id !== currentTrack?.id);
-      for (let i = remaining.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-      }
-      this.queue = currentTrack ? [currentTrack, ...remaining] : remaining;
-      this.currentIndex = currentTrack ? 0 : -1;
+      this.applyShuffle();
     } else {
       this.queue = [...this.originalQueue];
       if (currentTrack) {
@@ -392,6 +456,10 @@ export class AudioPlayer {
       this.repeatMode = 'all';
     }
     return this.repeatMode;
+  }
+
+  toggleRepeat() {
+    return this.cycleRepeat();
   }
 
   addTrackToQueue(track, playImmediately = false) {

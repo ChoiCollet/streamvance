@@ -36,8 +36,9 @@ export class YouTubeSearchService {
     if (typeof window !== 'undefined' && window.location) {
       const port = window.location.port;
       const hostname = window.location.hostname || 'localhost';
-      if (port && port !== '3000' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
-        candidateEndpoints.push(`http://${hostname}:3000/api/search`);
+      if (port !== '3000') {
+        candidateEndpoints.push(`http://${hostname || 'localhost'}:3000/api/search`);
+        candidateEndpoints.push('http://127.0.0.1:3000/api/search');
       }
     }
 
@@ -50,9 +51,20 @@ export class YouTubeSearchService {
 
         if (res.ok) {
           const data = await res.json();
+          let normalized = null;
           if (Array.isArray(data) && data.length > 0) {
-            this.cache.set(cacheKey, data);
-            return data;
+            normalized = { artist: null, tracks: data, songs: data.filter(t => !t.isCompilation), videos: data.filter(t => t.isCompilation) };
+          } else if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+            normalized = {
+              artist: data.artist || null,
+              tracks: data.tracks,
+              songs: data.songs || data.tracks.filter(t => !t.isCompilation),
+              videos: data.videos || data.tracks.filter(t => t.isCompilation)
+            };
+          }
+          if (normalized) {
+            this.cache.set(cacheKey, normalized);
+            return normalized;
           }
         }
       } catch (e) {
@@ -64,14 +76,20 @@ export class YouTubeSearchService {
     try {
       const fastResult = await this.racePublicInstances(cleanQuery);
       if (fastResult && fastResult.length > 0) {
-        this.cache.set(cacheKey, fastResult);
-        return fastResult;
+        const normalized = {
+          artist: null,
+          tracks: fastResult,
+          songs: fastResult,
+          videos: []
+        };
+        this.cache.set(cacheKey, normalized);
+        return normalized;
       }
     } catch (err) {
       console.warn('Public instances race failed:', err);
     }
 
-    return [];
+    return { artist: null, tracks: [], songs: [], videos: [] };
   }
 
   // 살아있는 미러 서버들 중 가장 빠른 서버를 낚아채는 병렬 경쟁 로직
