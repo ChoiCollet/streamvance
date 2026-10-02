@@ -101,26 +101,150 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                     return True
         return False
 
-    def music_score(self, title, channel, duration_sec):
+    OFFICIAL_LABELS = [
+        'hybe', 'smtown', 'jyp', 'yg entertainment', '1thek', 'stone music',
+        'edam', 'starship', 'cube', 'kakao', 'dingo', 'mnet', 'kbs kpop', 'mbk'
+    ]
+
+    def is_artist_official_channel(self, artist_name, channel):
+        if not artist_name or not channel:
+            return False
+        a_norm = re.sub(r'[^a-zA-Z0-9가-힣]', '', artist_name.lower())
+        c_norm = re.sub(r'[^a-zA-Z0-9가-힣]', '', channel.lower())
+        if a_norm and (a_norm in c_norm or c_norm in a_norm):
+            return True
+        if '- topic' in channel.lower():
+            return True
+        if any(lbl in channel.lower() for lbl in self.OFFICIAL_LABELS):
+            return True
+        return False
+
+    def music_score(self, title, channel, duration_sec, target_artist=''):
         score = 0
         lt = title.lower()
         lc = channel.lower()
+        if target_artist and self.is_artist_official_channel(target_artist, channel):
+            score += 25
         # 공식 음원 채널 (Topic은 유튜브 뮤직 공식 아트 트랙)
         if '- topic' in lc:
             score += 10
-        if any(lbl in lc for lbl in ['official', 'record', 'entertainment', 'music', '음악', '1thek', 'stone music', 'smtown', 'jyp', 'hybe', 'bighit', 'yg', 'dingo', 'mnet']):
-            score += 6
+        if any(lbl in lc for lbl in self.OFFICIAL_LABELS):
+            score += 8
         # 음악 메타데이터 키워드 (커버 및 라이브 포함)
-        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip', 'band', 'cover', '커버']):
-            score += 5
+        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip']):
+            score += 6
         # 일반적인 노래 재생시간 (2분~5분)
         if 110 <= duration_sec <= 330:
             score += 3
         return score
 
+    def search_youtube_innertube(self, query):
+        try:
+            url = 'https://www.youtube.com/youtubei/v1/search'
+            payload = json.dumps({
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": "2.20240101.00.00",
+                        "hl": "ko",
+                        "gl": "KR"
+                    }
+                },
+                "query": query
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            
+            contents = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+            songs = []
+            compilations = []
+            artist_info = None
+
+            for section in contents:
+                item_section = section.get('itemSectionRenderer', {})
+                for item in item_section.get('contents', []):
+                    if 'channelRenderer' in item and not artist_info:
+                        cr = item['channelRenderer']
+                        title_obj = cr.get('title', {})
+                        name = title_obj.get('simpleText') or (title_obj.get('runs', [{}])[0].get('text', ''))
+                        sub_obj = cr.get('subscriberCountText', {})
+                        sub = sub_obj.get('simpleText') or (sub_obj.get('runs', [{}])[0].get('text', ''))
+                        thumbs = cr.get('thumbnail', {}).get('thumbnails', [])
+                        avatar = thumbs[-1].get('url') if thumbs else ''
+                        if name:
+                            artist_info = {'name': name, 'subscribers': sub or '아티스트', 'avatar': avatar}
+
+                    v = item.get('videoRenderer')
+                    if not v or 'videoId' not in v:
+                        continue
+                    video_id = v['videoId']
+                    title = v.get('title', {}).get('runs', [{}])[0].get('text', '')
+                    channel = v.get('ownerText', {}).get('runs', [{}])[0].get('text', '') or \
+                              v.get('longBylineText', {}).get('runs', [{}])[0].get('text', 'YouTube')
+                    length_text = v.get('lengthText', {}).get('simpleText', '3:30')
+                    duration_sec = 210
+                    if ':' in length_text:
+                        parts = length_text.split(':')
+                        if len(parts) == 2:
+                            duration_sec = int(parts[0]) * 60 + int(parts[1])
+                        elif len(parts) == 3:
+                            duration_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    
+                    if self.is_non_music(title, channel):
+                        continue
+
+                    thumbnails = v.get('thumbnail', {}).get('thumbnails', [])
+                    cover = thumbnails[-1]['url'] if thumbnails else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                    is_compilation = (duration_sec > 600) or any(w in title.lower() for w in ['playlist', '플레이리스트', '노래 모음', '전곡 모음'])
+                    is_official = self.is_artist_official_channel(channel, query)
+                    score = self.music_score(title, channel, duration_sec, query)
+
+                    track_obj = {
+                        'id': f"yt-{video_id}",
+                        'videoId': video_id,
+                        'title': self.clean_title(title),
+                        'artist': query if is_official else channel,
+                        'channel': channel,
+                        'isOfficialChannel': is_official,
+                        'album': "YouTube Music",
+                        'genre': "pop",
+                        'mood': "all",
+                        'duration': duration_sec,
+                        'cover': cover,
+                        'lyrics': [],
+                        'isLiked': False,
+                        'isCompilation': is_compilation,
+                        '_score': score
+                    }
+                    if is_compilation:
+                        compilations.append(track_obj)
+                    else:
+                        songs.append(track_obj)
+
+            songs.sort(key=lambda s: s.get('_score', 0), reverse=True)
+            all_results = songs + compilations
+            if all_results:
+                return {
+                    'artist': artist_info,
+                    'tracks': all_results[:30],
+                    'songs': songs[:20],
+                    'videos': compilations[:15]
+                }
+        except Exception:
+            pass
+        return None
+
     def search_youtube(self, query):
         try:
-            # YouTube 검색 페이지 요청 (비디오 우선 필터 적용: sp=EgIQAQ%253D%253D)
+            # 1차: YouTube 검색 웹 스크래핑
             search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}&sp=EgIQAQ%253D%253D"
             req = urllib.request.Request(
                 search_url,
@@ -139,7 +263,10 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 match = re.search(r'var ytInitialData\s*=\s*({.+?});', html)
             
             if not match:
-                return []
+                innertube_res = self.search_youtube_innertube(query)
+                if innertube_res:
+                    return innertube_res
+                return {'artist': None, 'tracks': [], 'songs': [], 'videos': []}
 
             data = json.loads(match.group(1))
             songs = []
@@ -226,12 +353,15 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
 
                         # Shorts 제외 (45초 이상)
                         if duration_sec >= 45:
-                            score = self.music_score(title, channel, duration_sec)
+                            is_official = self.is_artist_official_channel(query, channel)
+                            score = self.music_score(title, channel, duration_sec, query)
                             track_obj = {
                                 'id': f"yt-{video_id}",
                                 'videoId': video_id,
                                 'title': self.clean_title(title),
-                                'artist': channel,
+                                'artist': query if is_official else channel,
+                                'channel': channel,
+                                'isOfficialChannel': is_official,
                                 'album': "YouTube Music",
                                 'genre': "pop",
                                 'mood': "all",

@@ -73,7 +73,7 @@
         </nav>
 
         <!-- 검색창 (YouTube Music PC 검색 아이콘 및 인풋) -->
-        <div class="ytm-search-box" id="ytm-search-box">
+        <div class="ytm-search-box" id="ytm-search-box" style="position: relative;">
           <button class="ytm-search-btn" id="btn-search-toggle" title="검색">
             <i data-lucide="search"></i>
           </button>
@@ -81,6 +81,15 @@
           <button class="search-clear-btn" id="search-clear-btn" style="display: none;">
             <i data-lucide="x"></i>
           </button>
+
+          <!-- PC 최근 검색어 드롭다운 패널 -->
+          <div class="search-dropdown-menu" id="search-dropdown-menu" style="display: none;">
+            <div class="recent-search-header-row">
+              <span class="recent-title">최근 검색어</span>
+              <button type="button" class="btn-clear-searches" id="btn-clear-searches-pc" title="검색 기록 전체 삭제">기록 삭제</button>
+            </div>
+            <div class="recent-search-list" id="pc-recent-search-list"></div>
+          </div>
         </div>
       </div>
 
@@ -397,9 +406,15 @@
           <div class="library-header">
             <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
               <h1 class="library-title">보관함</h1>
-              <button class="section-text-btn" id="btn-library-upload" title="내 PC 음원 추가">
-                <i data-lucide="upload-cloud" style="width: 15px; height: 15px; margin-right: 5px;"></i> 파일 추가
-              </button>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <button class="section-text-btn" id="btn-clear-history" style="display: none; color: #ff5252; border-color: rgba(255, 82, 82, 0.3);" title="시청 및 재생 기록 전체 삭제">
+                  <i data-lucide="trash-2" style="width: 15px; height: 15px; margin-right: 5px;"></i>
+                  <span>기록 전체 삭제</span>
+                </button>
+                <button class="section-text-btn" id="btn-library-upload" title="내 PC 음원 추가">
+                  <i data-lucide="upload-cloud" style="width: 15px; height: 15px; margin-right: 5px;"></i> 파일 추가
+                </button>
+              </div>
             </div>
             <div class="library-tabs">
               <button class="lib-tab active" data-lib="likes">좋아요 표시한 곡 (<span id="likes-count">0</span>)</button>
@@ -907,6 +922,31 @@
 
     <!-- 토스트 알림 메시지 -->
     <div class="toast-notification" id="toast-notification"></div>
+
+    <!-- 모바일 전용 전체화면 검색 오버레이 -->
+    <div class="mobile-search-overlay" id="mobile-search-overlay" style="display: none;">
+      <div class="mobile-search-header">
+        <button class="mobile-search-back-btn" id="btn-mobile-search-back" title="뒤로가기">
+          <i data-lucide="arrow-left"></i>
+        </button>
+        <form class="mobile-search-form" id="mobile-search-form" onsubmit="return false;">
+          <input type="text" id="mobile-search-input" placeholder="노래, 앨범, 아티스트 검색..." autocomplete="off">
+          <button type="button" class="mobile-search-clear-btn" id="btn-mobile-search-clear" style="display: none;">
+            <i data-lucide="x"></i>
+          </button>
+        </form>
+        <button class="mobile-search-submit-btn" id="btn-mobile-search-submit" title="검색">
+          <i data-lucide="search"></i>
+        </button>
+      </div>
+      <div class="mobile-search-recent-box">
+        <div class="recent-search-header-row">
+          <span class="recent-title">최근 검색어</span>
+          <button type="button" class="btn-clear-searches" id="btn-clear-searches" title="검색 기록 전체 삭제">기록 삭제</button>
+        </div>
+        <div class="recent-search-list" id="recent-search-list"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Audio Elements -->

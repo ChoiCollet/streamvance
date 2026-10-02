@@ -200,6 +200,20 @@ export class LyricsService {
     return lyrics;
   }
 
+  // 대기열 및 다음 곡 가사 백그라운드 사전 로드 (다음 곡 전환 시 0ms 즉각 가사 출력)
+  async prefetchLyrics(track) {
+    if (!track) return;
+    const trackKey = track.id || track.videoId || track.title;
+    if (this.rawLrcCache.has(trackKey)) return;
+    try {
+      if (localStorage.getItem(`lyrics_raw_v4_${trackKey}`)) return;
+    } catch (e) {}
+
+    setTimeout(() => {
+      this.getLyrics(track).catch(() => {});
+    }, 80);
+  }
+
   // 트랙에 대한 실시간 싱크 가사 가져오기
   async getLyrics(track) {
     if (!track) return [];
@@ -223,67 +237,72 @@ export class LyricsService {
       try {
         let data = null;
 
-        // 1. LRCLIB 정밀 매칭 (track_name & artist_name 모든 조합 탐색)
-        for (const t of titleCandidates) {
-          for (const a of artistCandidates) {
-            try {
-              const q = new URLSearchParams({ track_name: t, artist_name: a });
-              if (track.duration) q.append('duration', Math.round(track.duration));
-              const res = await fetch(`https://lrclib.net/api/get?${q.toString()}`, {
-                headers: { 'User-Agent': 'Streamvance/2.0 (https://streamvance.pages.dev)' }
-              });
-              if (res.ok) {
-                const resData = await res.json();
-                if (resData && (resData.syncedLyrics || resData.plainLyrics)) {
-                  data = resData;
-                  break;
-                }
-              }
-            } catch (e) {}
-          }
-          if (data) break;
+        // 1. 고속 병렬 질의: 가장 유력한 후보들을 병렬로 동시 요청 (직렬 대기 지연 5배 단축)
+        const primaryTitle = titleCandidates[0] || track.title;
+        const primaryArtist = artistCandidates[0] || track.artist;
+
+        const parallelFetches = [];
+
+        // A. 정밀 get API 요청
+        if (primaryTitle && primaryArtist) {
+          const q = new URLSearchParams({ track_name: primaryTitle, artist_name: primaryArtist });
+          if (track.duration) q.append('duration', Math.round(track.duration));
+          parallelFetches.push(
+            fetch(`https://lrclib.net/api/get?${q.toString()}`, {
+              headers: { 'User-Agent': 'Streamvance/2.0' }
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
         }
 
-        // 2. 정밀 매칭 실패 시: 반드시 [곡명 + 아티스트]로 검색 (엉뚱한 곡 매칭 방지)
-        if (!data || !data.syncedLyrics) {
-          const searchQueries = [];
-          for (const t of titleCandidates) {
-            for (const a of artistCandidates) {
-              searchQueries.push(`${t} ${a}`);
-            }
-          }
+        // B. 유연 search API 동시 병렬 요청
+        const searchQuery = `${primaryTitle} ${primaryArtist}`.trim();
+        if (searchQuery) {
+          parallelFetches.push(
+            fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`, {
+              headers: { 'User-Agent': 'Streamvance/2.0' }
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
+        }
 
-          for (const queryStr of searchQueries.slice(0, 4)) {
-            try {
-              const searchRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(queryStr)}`, {
-                headers: { 'User-Agent': 'Streamvance/2.0' }
-              });
-              if (searchRes.ok) {
-                const searchData = await searchRes.json();
-                if (Array.isArray(searchData) && searchData.length > 0) {
-                  // 재생시간(duration) 오차가 가장 적은 정품 버전을 최우선 선별
-                  if (track.duration) {
-                    searchData.sort((a, b) => {
-                      const diffA = Math.abs((a.duration || 0) - track.duration);
-                      const diffB = Math.abs((b.duration || 0) - track.duration);
-                      return diffA - diffB;
-                    });
-                  }
+        // 2순위 후보도 준비되어 있다면 병렬 풀에 추가
+        if (titleCandidates[1] || artistCandidates[1]) {
+          const altTitle = titleCandidates[1] || primaryTitle;
+          const altArtist = artistCandidates[1] || primaryArtist;
+          const qAlt = new URLSearchParams({ track_name: altTitle, artist_name: altArtist });
+          if (track.duration) qAlt.append('duration', Math.round(track.duration));
+          parallelFetches.push(
+            fetch(`https://lrclib.net/api/get?${qAlt.toString()}`, {
+              headers: { 'User-Agent': 'Streamvance/2.0' }
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
+        }
 
-                  const matchedArtistItem = searchData.find(item => {
-                    const itemArtist = (item.artistName || '').toLowerCase();
-                    return artistCandidates.some(c => itemArtist.includes(c.toLowerCase()) || c.toLowerCase().includes(itemArtist));
-                  }) || searchData[0];
-
-                  if (matchedArtistItem && matchedArtistItem.syncedLyrics) {
-                    data = matchedArtistItem;
-                    break;
-                  } else if (matchedArtistItem && !data) {
-                    data = matchedArtistItem;
-                  }
-                }
+        const results = await Promise.allSettled(parallelFetches);
+        for (const res of results) {
+          if (res.status === 'fulfilled' && res.value) {
+            const val = res.value;
+            // A형 응답: 단일 객체
+            if (val && !Array.isArray(val) && (val.syncedLyrics || val.plainLyrics)) {
+              if (val.syncedLyrics) {
+                data = val;
+                break;
+              } else if (!data) {
+                data = val;
               }
-            } catch (e) {}
+            }
+            // B형 응답: 배열
+            else if (Array.isArray(val) && val.length > 0) {
+              if (track.duration) {
+                val.sort((a, b) => Math.abs((a.duration || 0) - track.duration) - Math.abs((b.duration || 0) - track.duration));
+              }
+              const bestSynced = val.find(item => item.syncedLyrics);
+              if (bestSynced) {
+                data = bestSynced;
+                break;
+              } else if (!data && val[0]) {
+                data = val[0];
+              }
+            }
           }
         }
 

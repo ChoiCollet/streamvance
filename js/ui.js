@@ -4,6 +4,22 @@
 
 import { sampleTracks } from './data.js';
 
+// 전역 썸네일 장애 방지 복구 핸들러 (hqdefault -> mqdefault -> SVG fallback)
+if (typeof window !== 'undefined') {
+  window.handleTrackImgError = function(img) {
+    if (!img) return;
+    const src = img.src || '';
+    if (src.includes('maxresdefault.jpg')) {
+      img.src = src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+    } else if (src.includes('hqdefault.jpg')) {
+      img.src = src.replace('hqdefault.jpg', 'mqdefault.jpg');
+    } else if (!img.dataset.fallbackApplied) {
+      img.dataset.fallbackApplied = 'true';
+      img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' width='100%25' height='100%25'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%231f1c2c'/%3E%3Cstop offset='100%25' stop-color='%23928dab'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23g)'/%3E%3Cpath d='M40 68a8 8 0 1 1-4-6.9V32l24-6v30a8 8 0 1 1-4-6.9V37l-16 4v27z' fill='%23ffffff' opacity='0.85'/%3E%3C/svg%3E";
+    }
+  };
+}
+
 export class UIManager {
   constructor(player) {
     this.player = player;
@@ -106,7 +122,12 @@ export class UIManager {
       modal: document.getElementById('full-player-modal'),
       mobileSearchForm: document.getElementById('mobile-search-form'),
       mobileSearchSubmitBtn: document.getElementById('btn-mobile-search-submit'),
-      spotlightArtistChips: document.getElementById('spotlight-artist-chips')
+      spotlightArtistChips: document.getElementById('spotlight-artist-chips'),
+      btnClearHistory: document.getElementById('btn-clear-history'),
+      searchDropdownMenu: document.getElementById('search-dropdown-menu'),
+      pcRecentSearchList: document.getElementById('pc-recent-search-list'),
+      btnClearSearchesPc: document.getElementById('btn-clear-searches-pc'),
+      btnClearSearchesMobile: document.getElementById('btn-clear-searches')
     };
   }
 
@@ -212,7 +233,7 @@ export class UIManager {
       return `
         <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
           <div class="track-row-cover">
-            <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+            <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
             <div class="cover-play-overlay">
               ${isCurrent && this.player.isPlaying 
                 ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
@@ -247,7 +268,7 @@ export class UIManager {
     this.dom.recommendedAlbumsList.innerHTML = albums.map(album => `
       <div class="music-card" data-album-id="${album.id}">
         <div class="card-cover-wrapper">
-          <img src="${album.cover}" alt="${album.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+          <img src="${album.cover}" alt="${album.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
           <div class="card-float-play-btn" data-action="play-album" title="앨범 재생">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <polygon points="7 5 19 12 7 19 7 5"></polygon>
@@ -266,7 +287,7 @@ export class UIManager {
     this.dom.spotlightTracksList.innerHTML = artistTracks.slice(0, 18).map(track => `
       <div class="music-card" data-track-id="${track.id}">
         <div class="card-cover-wrapper">
-          <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+          <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
           <div class="card-float-play-btn" data-action="play" title="재생">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <polygon points="7 5 19 12 7 19 7 5"></polygon>
@@ -340,6 +361,11 @@ export class UIManager {
       targetTracks = this.localFiles;
     }
 
+    // 시청 기록 전체 삭제 버튼 표시/숨김 제어
+    if (this.dom.btnClearHistory) {
+      this.dom.btnClearHistory.style.display = (tabType === 'history' && targetTracks.length > 0) ? 'inline-flex' : 'none';
+    }
+
     if (targetTracks.length === 0) {
       let emptyMsg = '아직 보관된 음악이 없습니다.';
       let emptySub = '좋아하는 곡에 좋아요를 누르거나 음악 파일을 추가해보세요.';
@@ -385,7 +411,7 @@ export class UIManager {
           return `
             <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
               <div class="track-row-cover">
-                <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+                <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
                 <div class="cover-play-overlay">
                   ${isCurrent && this.player.isPlaying 
                     ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
@@ -399,6 +425,11 @@ export class UIManager {
               </div>
               <span class="track-row-duration">${this.formatTime(track.duration)}</span>
               <div class="track-row-actions">
+                ${tabType === 'history' ? `
+                  <button class="btn-track-action btn-delete-history" data-action="delete-history" data-track-id="${track.id}" title="기록에서 삭제">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                ` : ''}
                 <button class="btn-track-action btn-inline-like ${isLiked ? 'liked' : ''}" data-action="like" title="좋아요">
                   <i data-lucide="thumbs-up"></i>
                 </button>
@@ -412,6 +443,38 @@ export class UIManager {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  // 시청 / 재생 기록 개별 항목 삭제
+  deletePlayHistoryItem(trackId) {
+    if (!trackId) return;
+    const initialLen = this.playHistory.length;
+    this.playHistory = this.playHistory.filter(t => t.id !== trackId && t.videoId !== trackId);
+    if (this.playHistory.length !== initialLen) {
+      try {
+        localStorage.setItem('streamvance_play_history', JSON.stringify(this.playHistory));
+        localStorage.setItem('streamvance_history', JSON.stringify(this.playHistory));
+      } catch (e) {}
+      this.renderLibrary('history');
+      this.showToast('시청 기록에서 삭제되었습니다.');
+      if (typeof this.onHistoryChanged === 'function') {
+        this.onHistoryChanged(trackId);
+      }
+    }
+  }
+
+  // 시청 / 재생 기록 전체 삭제
+  clearAllPlayHistory() {
+    this.playHistory = [];
+    try {
+      localStorage.removeItem('streamvance_play_history');
+      localStorage.removeItem('streamvance_history');
+    } catch (e) {}
+    this.renderLibrary('history');
+    this.showToast('시청 기록이 모두 삭제되었습니다.');
+    if (typeof this.onHistoryChanged === 'function') {
+      this.onHistoryChanged(null);
+    }
   }
 
   // 7. 대기열 렌더링 (윤하 스크린샷 100% 매칭: 재생 중인 곡 스피커 아이콘 & 하이라이트)
@@ -580,7 +643,7 @@ export class UIManager {
     return `
       <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
         <div class="track-row-cover">
-          <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(this.src.includes('maxresdefault.jpg'))this.src=this.src.replace('maxresdefault.jpg','hqdefault.jpg');">
+          <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
           <div class="cover-play-overlay">
             ${isCurrent && this.player.isPlaying 
               ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>'
@@ -700,6 +763,33 @@ export class UIManager {
       artistInfo = searchData.artist || null;
       songs = searchData.songs || tracks.filter(t => !t.isCompilation);
       videos = searchData.videos || tracks.filter(t => t.isCompilation);
+    }
+
+    // 아티스트 검색 필터링 강화: 아티스트 검색 시 그 아티스트 공식 채널 및 레이블 공식 음원만 우선 선별
+    const targetArtistName = artistInfo?.name || query.trim();
+    const artNorm = targetArtistName.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    let artistOfficialSongs = [];
+    let relatedVideos = [];
+
+    songs.forEach(s => {
+      const cNorm = (s.channel || s.artist || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+      const isOfficial = s.isOfficialChannel ||
+        (artNorm && (cNorm.includes(artNorm) || artNorm.includes(cNorm))) ||
+        (s.channel && s.channel.toLowerCase().includes('- topic')) ||
+        (s.channel && /hybe|smtown|jyp|yg|1thek|stone music|edam|starship/i.test(s.channel));
+
+      if (isOfficial) {
+        artistOfficialSongs.push(s);
+      } else {
+        relatedVideos.push(s);
+      }
+    });
+
+    if (artistInfo && artistInfo.name && artistOfficialSongs.length > 0) {
+      songs = artistOfficialSongs;
+      if (relatedVideos.length > 0) {
+        videos = [...relatedVideos, ...videos];
+      }
     }
 
     if (tracks.length === 0) {

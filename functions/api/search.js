@@ -1,18 +1,16 @@
 // Cloudflare Pages Function: /api/search
-// 엣지 서버리스 런타임에서 작동하는 실시간 유튜브 검색 및 폴백 프록시
+// 엣지 서버리스 런타임에서 작동하는 실시간 유튜브 검색, 공식 아티스트 필터 및 다중 고속 폴백 프록시
 
-const INVIDIOUS_INSTANCES = [
-  'https://inv.nadeko.net',
-  'https://invidious.nerdvpn.de',
-  'https://vid.puffyan.us',
-  'https://invidious.projectsegfau.lt'
+const OFFICIAL_LABELS = [
+  'hybe', 'smtown', 'jyp', 'yg entertainment', '1thek', 'stone music',
+  'edam', 'starship', 'cube', 'kakao', 'dingo', 'mnet', 'kbs kpop', 'mbk'
 ];
 
 function cleanTitle(title) {
   if (!title) return '';
   return title
-    .replace(/\[(Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip).*?\]/gi, '')
-    .replace(/\((Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip).*?\)/gi, '')
+    .replace(/\[(Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Visualizer).*?\]/gi, '')
+    .replace(/\((Official|MV|M\/V|Audio|Music Video|가사|Lyrics|Special Clip|Visualizer).*?\)/gi, '')
     .replace(/【.*?】/g, '')
     .trim();
 }
@@ -32,7 +30,6 @@ function isNonMusic(title, channel) {
   const lt = (title || '').toLowerCase();
   const lc = (channel || '').toLowerCase();
 
-  // 커버곡, 우타이테, 라이브 커버, 버튜버 곡 등은 절대 차단되지 않도록 강력한 가드
   const musicGuards = [
     'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics', '- topic', '노래',
     'cover', '커버', 'live cover', '우타이테', '발묘', '출항', '스텔라이브', 'song', 'sing'
@@ -55,32 +52,46 @@ function isNonMusic(title, channel) {
 
   for (const kw of nonMusicKeywords) {
     if (lt.includes(kw) || lc.includes(kw)) {
-      if (!hasMusicGuard) {
-        return true;
-      }
+      if (!hasMusicGuard) return true;
     }
   }
   return false;
 }
 
-function calcMusicScore(title, channel, durationSec) {
+// 아티스트 검색 시 공식 채널/공식 소속사 여부 판별
+function isArtistOfficialChannel(artistName, channel) {
+  if (!artistName || !channel) return false;
+  const aNorm = artistName.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+  const cNorm = channel.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+  if (cNorm.includes(aNorm) || aNorm.includes(cNorm)) return true;
+  if (channel.toLowerCase().includes('- topic')) return true;
+  if (OFFICIAL_LABELS.some(lbl => channel.toLowerCase().includes(lbl))) return true;
+  return false;
+}
+
+function calcMusicScore(title, channel, durationSec, targetArtist = '') {
   let score = 0;
   const lt = (title || '').toLowerCase();
   const lc = (channel || '').toLowerCase();
 
+  if (targetArtist && isArtistOfficialChannel(targetArtist, channel)) {
+    score += 25; // 아티스트 공식 채널 곡에 최고 가중치 부여
+  }
+
   if (lc.includes('- topic')) score += 10;
-  if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo|mnet/i.test(lc)) score += 6;
-  if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip|band|cover|커버/i.test(lt)) score += 5;
+  if (OFFICIAL_LABELS.some(lbl => lc.includes(lbl))) score += 8;
+  if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip/i.test(lt)) score += 6;
   if (durationSec >= 110 && durationSec <= 330) score += 3;
   return score;
 }
 
-// 1. YouTube 웹 검색 직접 파싱 (server.py의 핵심 로직 이식)
+// 1. YouTube 웹 검색 직접 파싱 (Cloudflare Workers 환경)
 async function scrapeYouTube(query) {
   const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
   const res = await fetch(searchUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
     }
   });
@@ -96,7 +107,7 @@ async function scrapeYouTube(query) {
   }
 
   if (!match) {
-    return [];
+    return null;
   }
 
   const data = JSON.parse(match[1]);
@@ -105,6 +116,7 @@ async function scrapeYouTube(query) {
   const compilations = [];
   let artistInfo = null;
 
+  // 1차 패스: 아티스트 채널 정보 감지
   for (const section of contents) {
     const itemSection = section?.itemSectionRenderer?.contents || [];
     for (const item of itemSection) {
@@ -118,7 +130,15 @@ async function scrapeYouTube(query) {
           artistInfo = { name, subscribers: subs, avatar };
         }
       }
+    }
+  }
 
+  const detectedArtist = artistInfo ? artistInfo.name : query;
+
+  // 2차 패스: 비디오 목록 추출 및 필터링
+  for (const section of contents) {
+    const itemSection = section?.itemSectionRenderer?.contents || [];
+    for (const item of itemSection) {
       const v = item?.videoRenderer;
       if (!v || !v.videoId) continue;
 
@@ -137,12 +157,16 @@ async function scrapeYouTube(query) {
       const isCompilation = (durationSec > 600) || /playlist|플레이리스트|노래 모음|전곡 모음|1시간|1 hour|모음집|연속/i.test(title);
 
       if (durationSec >= 45) {
-        const score = calcMusicScore(title, channel, durationSec);
+        const isOfficial = isArtistOfficialChannel(detectedArtist, channel);
+        const score = calcMusicScore(title, channel, durationSec, detectedArtist);
+
         const trackObj = {
           id: `yt-${videoId}`,
           videoId: videoId,
           title: cleanTitle(title),
-          artist: channel,
+          artist: isOfficial ? detectedArtist : channel,
+          channel: channel,
+          isOfficialChannel: isOfficial,
           album: 'YouTube Music',
           genre: 'pop',
           mood: 'all',
@@ -153,6 +177,7 @@ async function scrapeYouTube(query) {
           isCompilation,
           _score: score
         };
+
         if (isCompilation) {
           compilations.push(trackObj);
         } else {
@@ -162,10 +187,12 @@ async function scrapeYouTube(query) {
     }
   }
 
-  // 음악 적합도 점수 높은 순으로 정렬
+  // 아티스트 검색인 경우: 공식 채널/공식 영상이 우선순위로 올라오도록 정렬
   songs.sort((a, b) => (b._score || 0) - (a._score || 0));
 
   const allTracks = [...songs, ...compilations];
+  if (allTracks.length === 0) return null;
+
   return {
     artist: artistInfo,
     tracks: allTracks.slice(0, 30),
@@ -174,39 +201,176 @@ async function scrapeYouTube(query) {
   };
 }
 
-// 2. Invidious 공개 인스턴스 검색 (유튜브 차단 시 자동 폴백)
-async function fetchFromInvidious(query) {
-  for (const base of INVIDIOUS_INSTANCES) {
+// 2. YouTube Innertube API (Cloudflare Workers 환경에서 차단 없는 안정적인 JSON 검색)
+async function searchYouTubeInnertube(query) {
+  try {
+    const payload = {
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20240101.00.00',
+          hl: 'ko',
+          gl: 'KR'
+        }
+      },
+      query: query
+    };
+
+    const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+
+    const songs = [];
+    const compilations = [];
+    let artistInfo = null;
+
+    for (const section of contents) {
+      const itemSection = section?.itemSectionRenderer?.contents || [];
+      for (const item of itemSection) {
+        if (item?.channelRenderer && !artistInfo) {
+          const cr = item.channelRenderer;
+          const name = cr.title?.simpleText || cr.title?.runs?.[0]?.text || '';
+          const subs = cr.subscriberCountText?.simpleText || cr.subscriberCountText?.runs?.[0]?.text || '아티스트';
+          const thumbs = cr.thumbnail?.thumbnails || [];
+          const avatar = thumbs.length > 0 ? thumbs[thumbs.length - 1].url : '';
+          if (name) {
+            artistInfo = { name, subscribers: subs, avatar };
+          }
+        }
+
+        const v = item?.videoRenderer;
+        if (!v || !v.videoId) continue;
+
+        const videoId = v.videoId;
+        const title = v.title?.runs?.[0]?.text || '';
+        const channel = v.ownerText?.runs?.[0]?.text || v.longBylineText?.runs?.[0]?.text || 'YouTube';
+        const lengthText = v.lengthText?.simpleText || '3:30';
+        const durationSec = parseDuration(lengthText);
+
+        if (isNonMusic(title, channel)) continue;
+
+        const isCompilation = (durationSec > 600) || /playlist|플레이리스트|노래 모음|전곡 모음/i.test(title);
+        const thumbs = v.thumbnail?.thumbnails || [];
+        const cover = thumbs.length > 0 ? thumbs[thumbs.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        const isOfficial = isArtistOfficialChannel(query, channel);
+
+        const trackObj = {
+          id: `yt-${videoId}`,
+          videoId: videoId,
+          title: cleanTitle(title),
+          artist: isOfficial ? query : channel,
+          channel: channel,
+          isOfficialChannel: isOfficial,
+          album: 'YouTube Music',
+          genre: 'pop',
+          mood: 'all',
+          duration: durationSec,
+          cover: cover,
+          lyrics: [],
+          isLiked: false,
+          isCompilation,
+          _score: calcMusicScore(title, channel, durationSec, query)
+        };
+
+        if (isCompilation) {
+          compilations.push(trackObj);
+        } else {
+          songs.push(trackObj);
+        }
+      }
+    }
+
+    songs.sort((a, b) => (b._score || 0) - (a._score || 0));
+    const all = [...songs, ...compilations];
+    if (all.length === 0) return null;
+
+    return {
+      artist: artistInfo,
+      tracks: all.slice(0, 30),
+      songs: songs.slice(0, 20),
+      videos: compilations.slice(0, 15)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// 3. 다중 Piped & Invidious 공개 인스턴스 폴백
+const PUBLIC_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://api.piped.privacy.com.de',
+  'https://inv.nadeko.net',
+  'https://invidious.nerdvpn.de',
+  'https://vid.puffyan.us'
+];
+
+async function fetchFromPublicMirrors(query) {
+  for (const base of PUBLIC_INSTANCES) {
     try {
-      const url = `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+      const isPiped = base.includes('piped');
+      const url = isPiped 
+        ? `${base}/search?q=${encodeURIComponent(query)}&filter=music_songs` 
+        : `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+      
       const res = await fetch(url, {
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) continue;
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data
-          .filter(item => item.type === 'video' && item.videoId)
-          .map(item => ({
-            id: `yt-${item.videoId}`,
-            videoId: item.videoId,
-            title: cleanTitle(item.title),
-            artist: item.author || "YouTube Music",
-            album: "YouTube Music Stream",
-            genre: "pop",
-            mood: "all",
-            duration: item.lengthSeconds || 210,
-            cover: item.videoThumbnails?.find(t => t.quality === 'high')?.url ||
-                   `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
-            lyrics: [],
-            isLiked: false
-          }));
+      const items = isPiped ? (data.items || []) : (Array.isArray(data) ? data : []);
+
+      if (items.length > 0) {
+        const tracks = items
+          .filter(item => {
+            const vid = item.url ? item.url.replace('/watch?v=', '') : item.videoId;
+            return vid && !isNonMusic(item.title, item.uploaderName || item.author);
+          })
+          .map(item => {
+            const vid = item.url ? item.url.replace('/watch?v=', '') : item.videoId;
+            const channel = item.uploaderName || item.author || 'YouTube Music';
+            const dur = item.duration || item.lengthSeconds || 210;
+            return {
+              id: `yt-${vid}`,
+              videoId: vid,
+              title: cleanTitle(item.title),
+              artist: channel,
+              channel: channel,
+              isOfficialChannel: isArtistOfficialChannel(query, channel),
+              album: "YouTube Music",
+              genre: "pop",
+              mood: "all",
+              duration: dur,
+              cover: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              lyrics: [],
+              isLiked: false,
+              _score: calcMusicScore(item.title, channel, dur, query)
+            };
+          });
+
+        tracks.sort((a, b) => b._score - a._score);
+        if (tracks.length > 0) {
+          return {
+            artist: null,
+            tracks: tracks.slice(0, 30),
+            songs: tracks.slice(0, 20),
+            videos: []
+          };
+        }
       }
     } catch (e) {
       continue;
     }
   }
-  return [];
+  return null;
 }
 
 // Cloudflare Pages Function GET 핸들러
@@ -218,30 +382,46 @@ export async function onRequestGet(context) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'public, max-age=300'
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Cache-Control': 'public, max-age=600, s-maxage=1200'
   };
 
   if (!q.trim()) {
-    return new Response(JSON.stringify([]), { headers });
+    return new Response(JSON.stringify({ artist: null, tracks: [], songs: [], videos: [] }), { headers });
   }
 
   const query = q.trim();
 
-  // 1. YouTube 직접 크롤링 시도
+  // 1. YouTube Innertube API 고속 검색 시도 (가장 안정적)
   try {
-    const results = await scrapeYouTube(query);
-    if (results && results.length > 0) {
-      return new Response(JSON.stringify(results), { headers });
+    const innertubeResult = await searchYouTubeInnertube(query);
+    if (innertubeResult && innertubeResult.tracks && innertubeResult.tracks.length > 0) {
+      return new Response(JSON.stringify(innertubeResult), { headers });
     }
   } catch (err) {
-    console.warn('Direct YouTube scrape failed, falling back to Invidious:', err);
+    console.warn('Innertube search failed:', err);
   }
 
-  // 2. Invidious 공개 인스턴스 폴백
+  // 2. YouTube 웹 직접 스크래핑 시도
   try {
-    const fallbackResults = await fetchFromInvidious(query);
-    return new Response(JSON.stringify(fallbackResults), { headers });
+    const scrapeResult = await scrapeYouTube(query);
+    if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
+      return new Response(JSON.stringify(scrapeResult), { headers });
+    }
   } catch (err) {
-    return new Response(JSON.stringify([]), { headers });
+    console.warn('Direct YouTube scrape failed:', err);
   }
+
+  // 3. 공개 미러 인스턴스 폴백 시도
+  try {
+    const mirrorResult = await fetchFromPublicMirrors(query);
+    if (mirrorResult && mirrorResult.tracks && mirrorResult.tracks.length > 0) {
+      return new Response(JSON.stringify(mirrorResult), { headers });
+    }
+  } catch (err) {
+    console.warn('Public mirrors fallback failed:', err);
+  }
+
+  return new Response(JSON.stringify({ artist: null, tracks: [], songs: [], videos: [] }), { headers });
 }
