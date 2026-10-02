@@ -12,7 +12,7 @@ import { ColorExtractor } from './colorExtractor.js';
 import { PiPManager } from './pipManager.js';
 import { TakeoutService } from './takeoutService.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
   // 1. Initialize Core Engine & UI
   const audioElement = document.getElementById('main-audio');
   const player = new AudioPlayer(audioElement);
@@ -187,6 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const taste = auth.analyzeUserTaste(candidatePool);
     const topGenres = new Set(taste.genres.slice(0, 3).map(g => g.genre));
     const topArtists = new Set(taste.artists.map(a => a.artist.toLowerCase()));
+    const recentPlayedArtists = new Set(ui.playHistory.slice(0, 10).map(h => (h.artist || '').toLowerCase()));
 
     // 최근 검색어 및 삭제된 검색어 반영
     let activeSearches = [];
@@ -1241,6 +1242,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnModalPip.addEventListener('click', handleTogglePiP);
   }
 
+  const btnTogglePipArt = document.getElementById('btn-toggle-pip-art');
+  if (btnTogglePipArt) {
+    btnTogglePipArt.addEventListener('click', handleTogglePiP);
+  }
+
   // Full Modal Tabs (Up Next, Lyrics, Related)
   document.querySelectorAll('.modal-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -2178,4 +2184,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) {
     window.lucide.createIcons();
   }
-});
+}
+
+// DOMContentLoaded가 이미 완료된 환경(Cloudflare Pages CDN 등)에서도 즉각 앱 초기화 실행
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
+

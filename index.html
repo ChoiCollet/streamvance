@@ -112,7 +112,7 @@
 
         <!-- 구글 로그인 / 프로필 아바타 버튼 -->
         <div class="user-profile-avatar-wrap" id="user-profile-wrap" title="계정 및 설정" style="display: none;">
-          <img src="" alt="User Profile" id="user-avatar-img">
+          <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="User Profile" id="user-avatar-img" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';">
         </div>
         <button class="header-login-btn" id="header-login-btn">
           <i data-lucide="log-in" style="width: 16px; height: 16px; margin-right: 6px;"></i>
@@ -123,7 +123,7 @@
         <div class="user-profile-dropdown" id="user-profile-dropdown">
           <div class="dropdown-header-user">
             <div class="dropdown-avatar-wrap">
-              <img src="" id="dropdown-avatar-img" alt="User Avatar">
+              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" id="dropdown-avatar-img" alt="User Avatar" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';">
             </div>
             <div class="dropdown-user-meta">
               <div class="dropdown-user-name" id="dropdown-user-name">최서원</div>
@@ -183,7 +183,10 @@
         </form>
       </div>
       <div class="mobile-search-body">
-        <div class="recent-search-header">최근 검색어</div>
+        <div class="recent-search-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px;">
+          <span class="recent-title" style="font-size: 0.95rem; font-weight: 600; color: #aaa;">최근 검색어</span>
+          <button type="button" class="btn-clear-searches" id="btn-clear-searches" title="검색 기록 전체 삭제">기록 삭제</button>
+        </div>
         <div class="recent-search-list" id="recent-search-list">
           <!-- JS 동적 렌더링 -->
         </div>
@@ -246,7 +249,7 @@
           <!-- YouTube Music PC 스타일 개인화 환영 배너 (스크린샷 100% 일치) -->
           <div class="user-welcome-banner" id="user-welcome-banner" style="display: none;">
             <div class="welcome-avatar-wrap">
-              <img src="" id="welcome-avatar-img" alt="Avatar">
+              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" id="welcome-avatar-img" alt="Avatar" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';">
             </div>
             <div class="welcome-text-wrap">
               <span class="welcome-subtitle">시작을 위한 음악</span>
@@ -589,7 +592,7 @@
             <div class="modal-album-art-wrap" id="modal-album-art-wrap">
               <img src="" alt="Album Art" id="modal-album-art" class="modal-album-art">
               <div class="art-corner-actions">
-                <button class="art-corner-btn" id="btn-toggle-pip" title="미니 플레이어">
+                <button class="art-corner-btn" id="btn-toggle-pip-art" title="미니 플레이어">
                   <i data-lucide="picture-in-picture-2"></i>
                 </button>
                 <button class="art-corner-btn" id="btn-toggle-stage-fs" title="전체화면">
@@ -922,31 +925,6 @@
 
     <!-- 토스트 알림 메시지 -->
     <div class="toast-notification" id="toast-notification"></div>
-
-    <!-- 모바일 전용 전체화면 검색 오버레이 -->
-    <div class="mobile-search-overlay" id="mobile-search-overlay" style="display: none;">
-      <div class="mobile-search-header">
-        <button class="mobile-search-back-btn" id="btn-mobile-search-back" title="뒤로가기">
-          <i data-lucide="arrow-left"></i>
-        </button>
-        <form class="mobile-search-form" id="mobile-search-form" onsubmit="return false;">
-          <input type="text" id="mobile-search-input" placeholder="노래, 앨범, 아티스트 검색..." autocomplete="off">
-          <button type="button" class="mobile-search-clear-btn" id="btn-mobile-search-clear" style="display: none;">
-            <i data-lucide="x"></i>
-          </button>
-        </form>
-        <button class="mobile-search-submit-btn" id="btn-mobile-search-submit" title="검색">
-          <i data-lucide="search"></i>
-        </button>
-      </div>
-      <div class="mobile-search-recent-box">
-        <div class="recent-search-header-row">
-          <span class="recent-title">최근 검색어</span>
-          <button type="button" class="btn-clear-searches" id="btn-clear-searches" title="검색 기록 전체 삭제">기록 삭제</button>
-        </div>
-        <div class="recent-search-list" id="recent-search-list"></div>
-      </div>
-    </div>
   </div>
 
   <!-- Audio Elements -->
