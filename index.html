@@ -488,10 +488,21 @@
           <div class="library-content-container" id="library-content"></div>
         </section>
 
-        <!-- 4. 검색 결과 뷰 -->
+        <!-- 4. 검색 결과 뷰 (Screenshot 3 매칭: 상단 필터 칩 바 + 16:9/정사각 카드) -->
         <section class="view-panel" id="view-search">
           <div class="search-header">
             <h2 class="section-title">"<span id="search-query-text"></span>" 검색 결과</h2>
+          </div>
+          <!-- 모바일/PC 카테고리 필터 칩 바 (Screenshot 3 100% 매칭) -->
+          <div class="search-filter-chips-bar" id="search-filter-chips-bar">
+            <button class="search-filter-chip active" data-filter="all">
+              <i data-lucide="x" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+              <span>전체</span>
+            </button>
+            <button class="search-filter-chip" data-filter="song">노래</button>
+            <button class="search-filter-chip" data-filter="video">동영상</button>
+            <button class="search-filter-chip" data-filter="album">앨범</button>
+            <button class="search-filter-chip" data-filter="playlist">커뮤니티 재생목록</button>
           </div>
           <div class="search-results-list" id="search-results-list"></div>
         </section>
@@ -615,14 +626,20 @@
       </div>
     </footer>
 
-    <!-- 가사 & 재생 대기열 전체화면 모달 (YouTube Music PC Now Playing - Screenshot 1 100% 일치) -->
+    <!-- 가사 & 재생 대기열 전체화면 모달 (YouTube Music PC/Mobile Now Playing) -->
     <div class="full-player-modal" id="full-player-modal">
       <div class="modal-header">
-        <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기">
-          <i data-lucide="chevron-down"></i>
+        <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기 (뒤로가기)" aria-label="플레이어 접기">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
         </button>
         <button class="icon-btn-modal" id="btn-modal-pip" title="화면 속 화면 (PIP 미니 플레이어)">
           <i data-lucide="picture-in-picture-2"></i>
+        </button>
+        <!-- 모바일 비디오 안전 제어 버튼 (유튜브 iframe 클릭 인터셉트 방지) -->
+        <button class="icon-btn-modal" id="btn-modal-theater-toggle" title="대형 영상 모드 토글" style="display: none;">
+          <i data-lucide="expand"></i>
         </button>
         <div class="modal-header-spacer"></div>
         <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
@@ -754,7 +771,7 @@
             <button class="modal-tab" data-tab="related">관련 항목</button>
           </div>
 
-          <!-- 1) Up Next (재생 대기열) -->
+          <!-- 1) Up Next (재생 대기열 - Screenshot 1 100% 일치) -->
           <div class="tab-pane" id="pane-up-next">
             <div class="queue-header">
               <div class="queue-meta">
@@ -766,24 +783,38 @@
                 <span>대기열 비우기</span>
               </button>
             </div>
+
+            <!-- 현재 재생 중인 트랙 (Screenshot 1: 이퀄라이저 애니메이션 + '=' 드래그 핸들) -->
+            <div class="queue-current-card-wrap" id="queue-current-card-wrap"></div>
+
+            <!-- 자동재생 토글 스위치 (Screenshot 1 100% 매칭: 무제한 재생을 위해 유사한 노래를 추가) -->
+            <div class="queue-autoplay-banner" id="queue-autoplay-banner">
+              <div class="autoplay-info">
+                <span class="autoplay-title">자동재생</span>
+                <span class="autoplay-desc">무제한 재생을 위해 유사한 노래를 추가</span>
+              </div>
+              <label class="ytm-toggle-switch" title="자동재생 설정">
+                <input type="checkbox" id="queue-autoplay-toggle" checked>
+                <span class="ytm-toggle-slider"></span>
+              </label>
+            </div>
+
             <div class="queue-track-list" id="queue-track-list"></div>
           </div>
 
-          <!-- 2) 가사 (Lyrics - 전주/간주 고려한 0.01초 정밀 싱크 대형 타이포그래피 & 실시간 싱크 미세조정) -->
+          <!-- 2) 가사 (Lyrics - 0.5s 제외, 0.1s와 1.0s 간소화 & 가독성 극대화) -->
           <div class="tab-pane active" id="pane-lyrics">
             <div class="lyrics-toolbar" id="lyrics-toolbar">
               <div class="sync-nudge-wrap" title="뮤직비디오 인트로 드라마나 대화로 인한 싱크 차이를 즉시 조정합니다 (자동 저장)">
                 <span class="sync-label">
                   <i data-lucide="sliders-horizontal" style="width: 13px; height: 13px; margin-right: 4px;"></i>
-                  싱크 조절:
+                  싱크:
                 </span>
-                <button class="btn-sync-adjust" id="btn-sync-minus-fast" title="1초 빠르게 (단축키: {)">-1.0s</button>
-                <button class="btn-sync-adjust" id="btn-sync-minus" title="0.5초 빠르게 (단축키: [)">-0.5s</button>
+                <button class="btn-sync-adjust btn-sync-speed" id="btn-sync-minus-fast" title="1초 빠르게 (단축키: {)">-1.0s</button>
                 <button class="btn-sync-adjust btn-sync-fine" id="btn-sync-minus-fine" title="0.1초 빠르게 (단축키: ,)">-0.1s</button>
                 <button class="btn-sync-adjust sync-badge-val" id="btn-sync-reset" title="싱크 0초로 초기화"><span id="sync-offset-display">±0.0s</span></button>
                 <button class="btn-sync-adjust btn-sync-fine" id="btn-sync-plus-fine" title="0.1초 늦게 (단축키: .)">+0.1s</button>
-                <button class="btn-sync-adjust" id="btn-sync-plus" title="0.5초 늦게 (단축키: ])">+0.5s</button>
-                <button class="btn-sync-adjust" id="btn-sync-plus-fast" title="1초 늦게 (단축키: })">+1.0s</button>
+                <button class="btn-sync-adjust btn-sync-speed" id="btn-sync-plus-fast" title="1초 늦게 (단축키: })">+1.0s</button>
               </div>
             </div>
             <div class="lyrics-container" id="lyrics-container">

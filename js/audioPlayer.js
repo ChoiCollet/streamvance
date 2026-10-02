@@ -28,6 +28,8 @@ export class AudioPlayer {
       onAutoRecommendNext: null
     };
 
+    this.isUserPaused = false;
+
     this.initHTML5AudioListeners();
     this.initYouTubePlayer();
     this.initMediaSession();
@@ -59,16 +61,28 @@ export class AudioPlayer {
               // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0, BUFFERING = 3
               if (event.data === 1) {
                 this.isPlaying = true;
+                this.isUserPaused = false;
                 this.startProgressSync();
                 this.startBgKeepAlive();
                 this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
               } else if (event.data === 2) {
-                this.isPlaying = false;
-                this.stopProgressSync();
-                this.stopBgKeepAlive();
-                this.syncMediaSessionPlaybackState();
-                if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+                // 모바일 백그라운드 재생 가드: 모바일 화면 꺼짐 시 브라우저 강제 일시정지 방지
+                if (typeof document !== 'undefined' && document.hidden && !this.isUserPaused) {
+                  this.startBgKeepAlive();
+                  this.syncMediaSessionPlaybackState();
+                  setTimeout(() => {
+                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+                      try { this.ytPlayer.playVideo(); } catch (e) {}
+                    }
+                  }, 120);
+                } else {
+                  this.isPlaying = false;
+                  this.stopProgressSync();
+                  this.stopBgKeepAlive();
+                  this.syncMediaSessionPlaybackState();
+                  if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+                }
               } else if (event.data === 0) {
                 // 재생 완료 시
                 if (this.repeatMode === 'one') {
@@ -149,14 +163,62 @@ export class AudioPlayer {
     });
   }
 
-  // 1. 모바일 백그라운드 재생 지속을 위한 무음 오디오 앵커 (iOS/Android 백그라운드 스레드 보호)
+  // 1. 모바일 백그라운드 재생 지속 엔진 (삼성인터넷, 크롬 모바일 화면 꺼짐 시 자동 정지 방지)
   initBgKeepAlive() {
     try {
-      this.bgKeepAliveAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      // 1초 무음 WAV 생성 (모바일 OS가 오디오 스트림으로 확실히 인식)
+      // RIFF header + 1 second 44.1kHz 16-bit mono silence
+      const sampleRate = 44100;
+      const numSamples = sampleRate; // 1 second
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+      const writeString = (offset, string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // 1 channel
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, 'data');
+      view.setUint32(40, numSamples * 2, true);
+      // Samples are already 0 (silence)
+
+      const blob = new Blob([buffer], { type: 'audio/wav' });
+      this.bgKeepAliveAudio = new Audio(URL.createObjectURL(blob));
       this.bgKeepAliveAudio.loop = true;
       this.bgKeepAliveAudio.volume = 0.01;
     } catch (e) {
       console.warn("Bg keepalive init error:", e);
+    }
+
+    // 모바일 탭 백그라운드 전환 및 화면 꺼짐 감지 시 재생 유지 가드
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (this.isPlaying) {
+          this.startBgKeepAlive();
+          if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+            setTimeout(() => {
+              if (this.isPlaying) {
+                try {
+                  const state = this.ytPlayer.getPlayerState();
+                  if (state === 2) { // 2 = PAUSED by browser background policy
+                    this.ytPlayer.playVideo();
+                  }
+                } catch (e) {}
+              }
+            }, 150);
+          }
+        }
+      });
     }
   }
 
@@ -183,6 +245,9 @@ export class AudioPlayer {
       navigator.mediaSession.setActionHandler('pause', () => {
         this.togglePlayPause();
       });
+      navigator.mediaSession.setActionHandler('stop', () => {
+        this.pause();
+      });
       navigator.mediaSession.setActionHandler('previoustrack', () => {
         this.prevTrack();
       });
@@ -190,15 +255,15 @@ export class AudioPlayer {
         this.nextTrack(false);
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        const skipTime = details.seekOffset || 10;
+        const skipTime = details?.seekOffset || 10;
         this.seekRelative(-skipTime);
       });
       navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        const skipTime = details.seekOffset || 10;
+        const skipTime = details?.seekOffset || 10;
         this.seekRelative(skipTime);
       });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined) {
+        if (details && details.seekTime !== undefined) {
           this.seekTo(details.seekTime);
         }
       });
@@ -397,18 +462,22 @@ export class AudioPlayer {
 
     if (currentTrack.videoId && this.ytPlayer) {
       const state = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
-      if (state === 1) { // playing
+      if (state === 1) { // playing -> user pauses
+        this.isUserPaused = true;
         this.ytPlayer.pauseVideo();
         this.stopBgKeepAlive();
-      } else {
+      } else { // paused -> user plays
+        this.isUserPaused = false;
         this.ytPlayer.playVideo();
         this.startBgKeepAlive();
       }
     } else {
       if (this.audio.paused) {
+        this.isUserPaused = false;
         this.audio.play();
         this.startBgKeepAlive();
       } else {
+        this.isUserPaused = true;
         this.audio.pause();
         this.stopBgKeepAlive();
       }

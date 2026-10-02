@@ -3167,6 +3167,38 @@ a {
     padding: 18px 16px !important;
     border-radius: 16px !important;
   }
+
+  /* 모바일 개인화 환영 배너 슬림화 (사용자 요청: 세로 차지 공간 대폭 축소) */
+  .user-welcome-banner {
+    padding: 4px 0 10px 0 !important;
+    gap: 10px !important;
+    margin-bottom: 2px !important;
+    align-items: center !important;
+  }
+
+  .welcome-avatar-wrap {
+    width: 34px !important;
+    height: 34px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  .welcome-subtitle {
+    display: none !important;
+  }
+
+  .welcome-title {
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.2px !important;
+  }
+
+  .welcome-taste-btn {
+    padding: 4px 10px !important;
+    font-size: 0.75rem !important;
+    height: 28px !important;
+    margin-left: auto !important;
+  }
 }
 
 /* ==========================================================================
@@ -4405,5 +4437,371 @@ a {
     left: 12px;
     width: auto;
   }
+}
+
+/* ========================================================================== */
+/* 16. 사용자 요청 신규 컴포넌트: 좋아요/싫어요 화이트 채움, 대기열 자동재생, 검색 칩 바 */
+/* ========================================================================== */
+
+/* 1) 좋아요 & 싫어요 활성화 시 확실한 화이트 채움 피드백 */
+.btn-like-modal.liked,
+.btn-like-track.liked,
+.btn-thumb.liked,
+.btn-track-action.liked,
+.btn-inline-like.liked,
+.btn-modal-dislike-mobile.disliked,
+.btn-modal-dislike-desktop.disliked,
+.btn-thumb.disliked {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+
+.btn-like-modal.liked svg,
+.btn-like-track.liked svg,
+.btn-thumb.liked svg,
+.btn-track-action.liked svg,
+.btn-inline-like.liked svg,
+.btn-modal-dislike-mobile.disliked svg,
+.btn-modal-dislike-desktop.disliked svg,
+.btn-thumb.disliked svg {
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+  color: #ffffff !important;
+}
+
+.btn-like-modal.liked svg *,
+.btn-like-track.liked svg *,
+.btn-thumb.liked svg *,
+.btn-track-action.liked svg *,
+.btn-inline-like.liked svg *,
+.btn-modal-dislike-mobile.disliked svg *,
+.btn-modal-dislike-desktop.disliked svg *,
+.btn-thumb.disliked svg * {
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+/* 2) Screenshot 1 일치: Up Next 현재 재생 트랙 카드 & 자동재생 토글 */
+.queue-current-card-wrap {
+  margin-bottom: 8px;
+}
+
+.queue-current-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  position: relative;
+}
+
+.queue-current-card .track-row-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.queue-current-card .track-row-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.queue-current-card .track-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-current-card .track-row-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-current-card .track-row-artist {
+  font-size: 0.8rem;
+  color: #aaaaaa;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-drag-handle {
+  color: #888888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.queue-drag-handle:hover {
+  color: #ffffff;
+}
+
+.queue-autoplay-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 10px;
+}
+
+.autoplay-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.autoplay-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.autoplay-desc {
+  font-size: 0.78rem;
+  color: #8e8e8e;
+}
+
+/* YouTube Music 스타일 토글 스위치 */
+.ytm-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.ytm-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ytm-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #555555;
+  transition: .25s ease;
+  border-radius: 24px;
+}
+
+.ytm-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .25s ease;
+  border-radius: 50%;
+}
+
+.ytm-toggle-switch input:checked + .ytm-toggle-slider {
+  background-color: #ffffff;
+}
+
+.ytm-toggle-switch input:checked + .ytm-toggle-slider:before {
+  transform: translateX(18px);
+  background-color: #030303;
+}
+
+/* 3) Screenshot 3 일치: 검색 카테고리 필터 칩 바 & 검색 결과 카드 */
+.search-filter-chips-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px 0 16px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.search-filter-chips-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.search-filter-chip {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f1f1;
+  font-size: 0.88rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.search-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.search-filter-chip.active {
+  background: #ffffff !important;
+  color: #030303 !important;
+  border-color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.search-card-wide {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.search-card-wide:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.search-card-thumb-wide {
+  width: 104px;
+  height: 58px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  background: #202020;
+}
+
+.search-card-thumb-wide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-card-thumb-square {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  background: #202020;
+}
+
+.search-card-thumb-square img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.search-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-card-meta {
+  font-size: 0.78rem;
+  color: #aaaaaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-card-more-btn {
+  color: #888888;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.search-card-more-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 4) 비디오 시어터 모드 클릭 가드 & 모바일 컨트롤 안정화 */
+.video-corner-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100 !important;
+  pointer-events: auto !important;
+}
+
+@media (max-width: 768px) {
+  .video-corner-actions {
+    opacity: 1 !important;
+    top: 8px;
+    right: 8px;
+    pointer-events: auto !important;
+  }
+  
+  .btn-video-theater, .btn-video-fs {
+    width: 38px !important;
+    height: 38px !important;
+    background: rgba(0, 0, 0, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6) !important;
+    pointer-events: auto !important;
+    touch-action: manipulation;
+  }
+}
+
+/* 5) 모달 접기 (뒤로가기) 버튼 강조 */
+#btn-close-full-player {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#btn-close-full-player:hover, #btn-close-full-player:active {
+  background: rgba(255, 255, 255, 0.22);
+  transform: scale(1.08);
 }
 

@@ -38,6 +38,19 @@ export class UIManager {
     } catch (e) {}
     this.likedTrackIds = new Set(this.likedTracksMap.keys());
 
+    // 싫어요(Dislike) 목록 영구 저장 및 관리
+    this.dislikedTrackIds = new Set();
+    try {
+      const storedDislikes = JSON.parse(localStorage.getItem('streamvance_disliked_tracks') || '[]');
+      if (Array.isArray(storedDislikes)) {
+        storedDislikes.forEach(id => this.dislikedTrackIds.add(id));
+      }
+    } catch (e) {}
+
+    // 검색 결과 캐시 및 필터 상태 (Screenshot 3 일치)
+    this.lastSearchData = null;
+    this.currentSearchFilter = 'all';
+
     // 시청 / 감상 기록 영구 저장 및 관리
     this.playHistory = [];
     try {
@@ -193,10 +206,14 @@ export class UIManager {
     } else {
       this.likedTracksMap.set(track.id, track);
       this.likedTrackIds.add(track.id);
+      if (this.dislikedTrackIds.has(track.id)) {
+        this.dislikedTrackIds.delete(track.id);
+      }
       this.showToast(`'${track.title}' 좋아요 표시한 음악에 추가됨`);
     }
     try {
       localStorage.setItem('streamvance_liked_tracks', JSON.stringify(Array.from(this.likedTracksMap.values())));
+      localStorage.setItem('streamvance_disliked_tracks', JSON.stringify(Array.from(this.dislikedTrackIds)));
     } catch (e) {}
 
     this.updateLikeButtons(track.id);
@@ -208,6 +225,28 @@ export class UIManager {
     }
   }
 
+  toggleDislike(track) {
+    if (!track) return;
+    if (this.dislikedTrackIds.has(track.id)) {
+      this.dislikedTrackIds.delete(track.id);
+      this.showToast(`'${track.title}' 싫어요 취소됨`);
+    } else {
+      this.dislikedTrackIds.add(track.id);
+      if (this.likedTracksMap.has(track.id)) {
+        this.likedTracksMap.delete(track.id);
+        this.likedTrackIds.delete(track.id);
+      }
+      this.showToast('취향에 맞지 않는 곡으로 설정되었습니다.');
+    }
+    try {
+      localStorage.setItem('streamvance_liked_tracks', JSON.stringify(Array.from(this.likedTracksMap.values())));
+      localStorage.setItem('streamvance_disliked_tracks', JSON.stringify(Array.from(this.dislikedTrackIds)));
+    } catch (e) {}
+
+    this.updateLikeButtons(track.id);
+    this.updateLikesCount();
+  }
+
   updateLikesCount() {
     if (this.dom.likesCount) {
       this.dom.likesCount.textContent = this.likedTracksMap.size;
@@ -215,12 +254,39 @@ export class UIManager {
   }
 
   updateLikeButtons(currentTrackId) {
-    const isLiked = this.likedTrackIds.has(currentTrackId);
+    if (!currentTrackId && this.player) {
+      currentTrackId = this.player.getCurrentTrack()?.id;
+    }
+    const isLiked = currentTrackId ? this.likedTrackIds.has(currentTrackId) : false;
+    const isDisliked = currentTrackId ? this.dislikedTrackIds.has(currentTrackId) : false;
+
+    // 좋아요 버튼 (화이트 채움)
     if (this.dom.likeBtn) {
       this.dom.likeBtn.classList.toggle('liked', isLiked);
     }
     if (this.dom.modalLikeBtn) {
       this.dom.modalLikeBtn.classList.toggle('liked', isLiked);
+    }
+
+    // 싫어요 버튼 (화이트 채움)
+    const thumbDownBtn = this.dom.thumbDownBtn || document.getElementById('btn-thumb-down');
+    if (thumbDownBtn) {
+      thumbDownBtn.classList.toggle('disliked', isDisliked);
+    }
+    const modalDislikeBtn = document.getElementById('btn-modal-dislike');
+    if (modalDislikeBtn) {
+      modalDislikeBtn.classList.toggle('disliked', isDisliked);
+    }
+    const modalDislikeMobile = document.getElementById('btn-modal-dislike-mobile');
+    if (modalDislikeMobile) {
+      modalDislikeMobile.classList.toggle('disliked', isDisliked);
+    }
+
+    // 페이지 내 모든 트랙 카드의 인라인 좋아요 버튼 동기화
+    if (currentTrackId) {
+      document.querySelectorAll(`.btn-inline-like[data-track-id="${currentTrackId}"]`).forEach(btn => {
+        btn.classList.toggle('liked', isLiked);
+      });
     }
   }
 
@@ -262,10 +328,45 @@ export class UIManager {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // 2. 다시 듣기 렌더링 (대형 정사각 앨범 카드 + 화이트 재생 삼각형 - 스크린샷 일치)
+  // 2. 다시 듣기 렌더링 (실제 최근 감상 기록 + 취향 DNA 알고리즘 기반)
   renderRecommendedAlbums(albums, allTracks) {
     if (!this.dom.recommendedAlbumsList) return;
-    this.dom.recommendedAlbumsList.innerHTML = albums.map(album => `
+
+    // 1) 실제 청취 기록(playHistory)에서 최근 곡 우선 수집 (중복 제거)
+    const historyTrackIds = new Set();
+    const historyCards = [];
+    if (Array.isArray(this.playHistory)) {
+      for (const h of this.playHistory) {
+        if (h && h.id && !historyTrackIds.has(h.id)) {
+          historyTrackIds.add(h.id);
+          const full = (allTracks || []).find(t => t.id === h.id) || h;
+          historyCards.push(full);
+          if (historyCards.length >= 8) break;
+        }
+      }
+    }
+
+    // 2) 청취 기록 카드 생성 (실제 들은 곡이 바로 '다시 듣기'에 반영)
+    let cardsHtml = '';
+    if (historyCards.length > 0) {
+      cardsHtml = historyCards.map(track => `
+        <div class="music-card" data-track-id="${track.id}">
+          <div class="card-cover-wrapper">
+            <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+            <div class="card-float-play-btn" data-action="play" title="다시 듣기">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <polygon points="7 5 19 12 7 19 7 5"></polygon>
+              </svg>
+            </div>
+          </div>
+          <div class="card-title">${track.title}</div>
+          <div class="card-subtitle">다시 듣기 • ${track.artist}</div>
+        </div>
+      `).join('');
+    }
+
+    // 3) 추천 앨범 결합
+    const albumCardsHtml = (albums || []).map(album => `
       <div class="music-card" data-album-id="${album.id}">
         <div class="card-cover-wrapper">
           <img src="${album.cover}" alt="${album.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
@@ -279,6 +380,8 @@ export class UIManager {
         <div class="card-subtitle">${album.artist}</div>
       </div>
     `).join('');
+
+    this.dom.recommendedAlbumsList.innerHTML = cardsHtml + albumCardsHtml;
   }
 
   // 3. 아티스트 스포트라이트 (아래 아티스트를 좋아한다면)
@@ -484,43 +587,77 @@ export class UIManager {
       this.dom.queueCount.textContent = `${queue.length}곡`;
     }
 
+    // 1) Screenshot 1 일치: 현재 재생 중인 트랙 카드 (이퀄라이저 바 + '=' 드래그 핸들)
+    const currentCardWrap = document.getElementById('queue-current-card-wrap');
+    const curTrack = (currentIndex >= 0 && currentIndex < queue.length) ? queue[currentIndex] : null;
+
+    if (currentCardWrap) {
+      if (curTrack) {
+        currentCardWrap.innerHTML = `
+          <div class="queue-current-card" data-queue-index="${currentIndex}">
+            <div class="track-row-cover" style="width: 48px; height: 48px; position: relative; border-radius: 6px; overflow: hidden; flex-shrink: 0;">
+              <img src="${curTrack.cover}" alt="${curTrack.title}" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+              <div class="audio-equalizer-bars active" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55);">
+                <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+              </div>
+            </div>
+            <div class="track-row-info">
+              <div class="track-row-title" style="font-size: 0.95rem; font-weight: 700; color: #fff;">${curTrack.title}</div>
+              <div class="track-row-artist" style="font-size: 0.82rem; color: #aaa;">${curTrack.artist} • ${this.formatTime(curTrack.duration)}</div>
+            </div>
+            <div class="queue-drag-handle" title="재생 중인 트랙">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line></svg>
+            </div>
+          </div>
+        `;
+      } else {
+        currentCardWrap.innerHTML = '';
+      }
+    }
+
     if (queue.length === 0) {
       this.dom.queueList.innerHTML = `<p class="lyrics-placeholder">대기열이 비어있습니다.</p>`;
       return;
     }
 
-    this.dom.queueList.innerHTML = queue.map((track, index) => {
-      const isPlaying = (index === currentIndex);
+    // 2) Screenshot 1 일치: 다음 재생될 트랙 목록 (드래그 핸들 '=' 및 X 삭제)
+    const nextTracks = queue.slice(currentIndex + 1);
+    if (nextTracks.length === 0) {
+      this.dom.queueList.innerHTML = `
+        <div style="padding: 24px; text-align: center; color: #888;">
+          <p style="font-size: 0.95rem; color: #ccc;">대기열의 마지막 곡입니다.</p>
+          <p style="font-size: 0.8rem; margin-top: 4px; color: #777;">자동재생이 켜져 있으면 유사한 맞춤곡이 계속 이어집니다.</p>
+        </div>
+      `;
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+
+    this.dom.queueList.innerHTML = nextTracks.map((track, i) => {
+      const realIndex = currentIndex + 1 + i;
       return `
-        <div class="track-row-card queue-card ${isPlaying ? 'playing active' : ''}" data-queue-index="${index}">
-          <div class="track-row-cover" style="width: 44px; height: 44px; position: relative;">
-            <img src="${track.cover}" alt="${track.title}">
-            ${isPlaying ? `
-              <div class="queue-speaker-overlay" style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; color: #fff;">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" stroke-width="2" fill="none"></path>
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="2" fill="none"></path>
-                </svg>
-              </div>
-            ` : `
-              <div class="cover-play-overlay">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
-              </div>
-            `}
+        <div class="track-row-card queue-card" data-queue-index="${realIndex}">
+          <div class="track-row-cover" style="width: 44px; height: 44px; position: relative; border-radius: 6px; overflow: hidden; flex-shrink: 0;">
+            <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+            <div class="cover-play-overlay">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+            </div>
           </div>
           <div class="track-row-info">
-            <div class="track-row-title" style="font-weight: ${isPlaying ? '700' : '500'}; font-size: 0.92rem;">${track.title}</div>
-            <div class="track-row-artist" style="font-size: 0.8rem; color: #aaa;">${track.artist}</div>
+            <div class="track-row-title" style="font-weight: 500; font-size: 0.92rem; color: #fff;">${track.title}</div>
+            <div class="track-row-artist" style="font-size: 0.8rem; color: #aaa;">${track.artist} • ${this.formatTime(track.duration)}</div>
           </div>
-          <span class="track-row-duration" style="font-size: 0.82rem; color: #888;">${this.formatTime(track.duration)}</span>
-          <button class="btn-track-action" data-action="remove-queue" data-index="${index}" title="대기열에서 삭제">
+          <button class="btn-track-action" data-action="remove-queue" data-index="${realIndex}" title="대기열에서 삭제">
             <i data-lucide="x"></i>
           </button>
+          <div class="queue-drag-handle" title="순서 이동">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line></svg>
+          </div>
         </div>
       `;
     }).join('');
 
+    if (window.lucide) window.lucide.createIcons();
   }
 
   // 8. 가사(Lyrics) 렌더링 및 동기화 (전주/간주 정확히 반영)
@@ -637,12 +774,14 @@ export class UIManager {
     }
   }
 
-  _createSearchTrackRow(track) {
+  _createSearchTrackRow(track, isVideo = false) {
     const isCurrent = this.player.getCurrentTrack()?.id === track.id;
     const isLiked = this.likedTrackIds.has(track.id);
+    const isWide = isVideo || track.isCompilation;
+
     return `
-      <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
-        <div class="track-row-cover">
+      <div class="search-card-wide track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
+        <div class="${isWide ? 'search-card-thumb-wide' : 'search-card-thumb-square'}">
           <img src="${track.cover}" alt="${track.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
           <div class="cover-play-overlay">
             ${isCurrent && this.player.isPlaying 
@@ -651,18 +790,13 @@ export class UIManager {
             }
           </div>
         </div>
-        <div class="track-row-info">
-          <div class="track-row-title">${track.title}</div>
-          <div class="track-row-artist">노래 • ${track.artist} ${track.duration ? '• ' + this.formatTime(track.duration) : ''}</div>
+        <div class="search-card-info">
+          <div class="search-card-title">${track.title}</div>
+          <div class="search-card-meta">${isWide ? (track.channel || track.artist) + ' • 동영상' : (track.artist || '노래') + (track.duration ? ' • ' + this.formatTime(track.duration) : '')}</div>
         </div>
-        <div class="track-row-actions">
-          <button class="btn-track-action btn-inline-like ${isLiked ? 'liked' : ''}" data-action="like" title="좋아요">
-            <i data-lucide="thumbs-up"></i>
-          </button>
-          <button class="btn-track-action" data-action="queue" title="대기열에 추가">
-            <i data-lucide="list-plus"></i>
-          </button>
-        </div>
+        <button class="search-card-more-btn" data-action="track-more" data-track-id="${track.id}" title="더보기">
+          <i data-lucide="more-vertical"></i>
+        </button>
       </div>
     `;
   }
@@ -735,9 +869,13 @@ export class UIManager {
   }
 
   // 10. 검색 결과 렌더링 (아티스트 상위 검색결과 카드 + 노래 + 동영상 분리 - 스크린샷 2 일치)
+  // 10. 검색 결과 렌더링 (Screenshot 3 100% 일치: 상단 필터 칩 + 와이드/스퀘어 카드 + 더보기 버튼)
   renderSearchResults(query, searchData, isSearchingOnline = false) {
     if (!this.dom.searchResultsList) return;
     if (this.dom.searchQueryText) this.dom.searchQueryText.textContent = query;
+
+    this.lastSearchData = { query, searchData, isSearchingOnline };
+    const filter = this.currentSearchFilter || 'all';
 
     let tracks = [];
     let artistInfo = null;
@@ -748,7 +886,6 @@ export class UIManager {
       tracks = searchData;
       songs = tracks.filter(t => !t.isCompilation);
       videos = tracks.filter(t => t.isCompilation);
-      // 아티스트 검색 감지: 트랙들의 아티스트와 검색어 일치 여부 확인
       const qLower = query.toLowerCase().trim();
       const matchArtistTrack = tracks.find(t => (t.artist || '').toLowerCase().includes(qLower) || qLower.includes((t.artist || '').toLowerCase()));
       if (matchArtistTrack && qLower.length >= 2) {
@@ -765,7 +902,7 @@ export class UIManager {
       videos = searchData.videos || tracks.filter(t => t.isCompilation);
     }
 
-    // 아티스트 검색 필터링 강화: 아티스트 검색 시 그 아티스트 공식 채널 및 레이블 공식 음원만 우선 선별
+    // 아티스트 검색 필터링 강화
     const targetArtistName = artistInfo?.name || query.trim();
     const artNorm = targetArtistName.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
     let artistOfficialSongs = [];
@@ -815,76 +952,131 @@ export class UIManager {
 
     let html = '';
 
-    // 1. 아티스트 상위 검색결과 카드 (스크린샷 2 100% 일치)
-    if (artistInfo && artistInfo.name) {
-      const topArtistTracks = (songs.length > 0 ? songs : tracks).slice(0, 3);
+    // 필터별 분기 렌더링 (Screenshot 3 카테고리 칩 연동)
+    if (filter === 'song') {
       html += `
-        <div class="section-container" style="margin-bottom: 28px;">
-          <h2 class="section-title" style="font-size: 1.2rem; margin-bottom: 14px;">상위 검색결과</h2>
-          <div class="artist-top-card" id="artist-top-card" data-artist="${artistInfo.name}">
-            <div class="artist-top-header">
-              <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100';">
-              <div class="artist-top-info">
-                <div class="artist-top-name">${artistInfo.name}</div>
-                <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'}</div>
-              </div>
-            </div>
-            <div class="artist-top-actions">
-              <button class="btn-artist-action btn-shuffle" id="btn-search-artist-shuffle" title="아티스트 음악 전체 셔플">
-                <i data-lucide="shuffle" style="width: 16px; height: 16px;"></i>
-                <span>셔플</span>
-              </button>
-              <button class="btn-artist-action btn-station" id="btn-search-artist-station" title="아티스트 뮤직 스테이션 라디오">
-                <span style="font-size: 1.1rem; line-height: 1;">((•))</span>
-                <span>뮤직 스테이션</span>
-              </button>
-            </div>
-            <div class="artist-top-tracks">
-              ${topArtistTracks.map(t => this._createSearchTrackRow(t)).join('')}
-            </div>
+        <div class="section-container" style="margin-bottom: 24px;">
+          <div class="search-songs-list">
+            ${(songs.length > 0 ? songs : tracks).map(t => this._createSearchTrackRow(t, false)).join('')}
           </div>
         </div>
       `;
-      
-      const restSongs = songs.slice(3);
-      if (restSongs.length > 0) {
+    } else if (filter === 'video') {
+      const displayVideos = videos.length > 0 ? videos : tracks.filter(t => t.videoId || t.isCompilation);
+      html += `
+        <div class="section-container" style="margin-bottom: 24px;">
+          <div class="search-videos-list">
+            ${displayVideos.map(t => this._createSearchTrackRow(t, true)).join('')}
+          </div>
+        </div>
+      `;
+    } else if (filter === 'playlist') {
+      const playlists = tracks.filter(t => t.isCompilation || (t.title || '').toLowerCase().includes('playlist') || (t.channel || '').toLowerCase().includes('playlist'));
+      const displayPlaylists = playlists.length > 0 ? playlists : videos;
+      html += `
+        <div class="section-container" style="margin-bottom: 24px;">
+          <div class="search-videos-list">
+            ${displayPlaylists.map(t => this._createSearchTrackRow(t, true)).join('')}
+          </div>
+        </div>
+      `;
+    } else if (filter === 'album') {
+      // 앨범별 그룹화
+      const albumMap = new Map();
+      tracks.forEach(t => {
+        const albumName = t.album || '싱글 및 EP';
+        if (!albumMap.has(albumName)) {
+          albumMap.set(albumName, { title: albumName, artist: t.artist, cover: t.cover, track: t });
+        }
+      });
+      html += `
+        <div class="section-container" style="margin-bottom: 24px;">
+          <div class="cards-horizontal-scroll" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px;">
+            ${Array.from(albumMap.values()).map(alb => `
+              <div class="music-card" data-track-id="${alb.track.id}">
+                <div class="card-cover-wrapper">
+                  <img src="${alb.cover}" alt="${alb.title}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+                  <div class="card-float-play-btn" data-action="play" title="재생">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><polygon points="7 5 19 12 7 19 7 5"></polygon></svg>
+                  </div>
+                </div>
+                <div class="card-title">${alb.title}</div>
+                <div class="card-subtitle">앨범 • ${alb.artist}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    } else {
+      // 전체 (all) 모드
+      if (artistInfo && artistInfo.name) {
+        const topArtistTracks = (songs.length > 0 ? songs : tracks).slice(0, 3);
+        html += `
+          <div class="section-container" style="margin-bottom: 28px;">
+            <h2 class="section-title" style="font-size: 1.2rem; margin-bottom: 14px;">상위 검색결과</h2>
+            <div class="artist-top-card" id="artist-top-card" data-artist="${artistInfo.name}">
+              <div class="artist-top-header">
+                <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+                <div class="artist-top-info">
+                  <div class="artist-top-name">${artistInfo.name}</div>
+                  <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'}</div>
+                </div>
+              </div>
+              <div class="artist-top-actions">
+                <button class="btn-artist-action btn-shuffle" id="btn-search-artist-shuffle" title="아티스트 음악 전체 셔플">
+                  <i data-lucide="shuffle" style="width: 16px; height: 16px;"></i>
+                  <span>셔플</span>
+                </button>
+                <button class="btn-artist-action btn-station" id="btn-search-artist-station" title="아티스트 뮤직 스테이션 라디오">
+                  <span style="font-size: 1.1rem; line-height: 1;">((•))</span>
+                  <span>뮤직 스테이션</span>
+                </button>
+              </div>
+              <div class="artist-top-tracks">
+                ${topArtistTracks.map(t => this._createSearchTrackRow(t, false)).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+        
+        const restSongs = songs.slice(3);
+        if (restSongs.length > 0) {
+          html += `
+            <div class="section-container" style="margin-bottom: 28px;">
+              <div class="section-header" style="margin-bottom: 12px;">
+                <h2 class="section-title">노래</h2>
+              </div>
+              <div class="search-songs-list">
+                ${restSongs.map(t => this._createSearchTrackRow(t, false)).join('')}
+              </div>
+            </div>
+          `;
+        }
+      } else {
         html += `
           <div class="section-container" style="margin-bottom: 28px;">
             <div class="section-header" style="margin-bottom: 12px;">
               <h2 class="section-title">노래</h2>
             </div>
             <div class="search-songs-list">
-              ${restSongs.map(t => this._createSearchTrackRow(t)).join('')}
+              ${(songs.length > 0 ? songs : tracks).map(t => this._createSearchTrackRow(t, false)).join('')}
             </div>
           </div>
         `;
       }
-    } else {
-      // 일반 곡 검색: 노래 섹션
-      html += `
-        <div class="section-container" style="margin-bottom: 28px;">
-          <div class="section-header" style="margin-bottom: 12px;">
-            <h2 class="section-title">노래</h2>
-          </div>
-          <div class="search-songs-list">
-            ${(songs.length > 0 ? songs : tracks).map(t => this._createSearchTrackRow(t)).join('')}
-          </div>
-        </div>
-      `;
-    }
 
-    // 동영상 / 컴필레이션 섹션 (스크린샷 1 일치)
-    if (videos.length > 0) {
-      html += `
-        <div class="section-container" style="margin-top: 24px;">
-          <div class="section-header" style="margin-bottom: 12px;">
-            <h2 class="section-title">동영상</h2>
+      if (videos.length > 0) {
+        html += `
+          <div class="section-container" style="margin-top: 24px;">
+            <div class="section-header" style="margin-bottom: 12px;">
+              <h2 class="section-title">동영상</h2>
+            </div>
+            <div class="search-videos-list">
+              ${videos.map(t => this._createSearchTrackRow(t, true)).join('')}
+            </div>
           </div>
-          <div class="search-videos-list">
-            ${videos.map(t => this._createSearchTrackRow(t)).join('')}
-          </div>
-        </div>
-      `;
+        `;
+      }
     }
 
     this.dom.searchResultsList.innerHTML = html;
