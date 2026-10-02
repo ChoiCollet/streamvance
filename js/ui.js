@@ -404,7 +404,7 @@ export class UIManager {
     }
 
     this.dom.libraryContent.innerHTML = `
-      <div class="quick-picks-grid-ytm" style="grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));">
+      <div class="quick-picks-grid-ytm library-grid-layout" style="grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));">
         ${targetTracks.map(track => {
           const isCurrent = this.player.getCurrentTrack()?.id === track.id;
           const isLiked = this.likedTrackIds.has(track.id);

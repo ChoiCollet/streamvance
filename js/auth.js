@@ -281,10 +281,29 @@ export class AuthManager {
         if (welcomeAvatarImg) welcomeAvatarImg.src = userPic;
         if (welcomeUserName) welcomeUserName.textContent = userName;
       }
+
+      // 모바일 사이드바 사용자 계정 동기화
+      const sbLoginBtn = document.getElementById('sidebar-login-btn');
+      const sbUserProfile = document.getElementById('sidebar-user-profile');
+      const sbUserAvatar = document.getElementById('sidebar-user-avatar');
+      const sbUserName = document.getElementById('sidebar-user-name');
+      const sbUserEmail = document.getElementById('sidebar-user-email');
+      if (sbLoginBtn) sbLoginBtn.style.display = 'none';
+      if (sbUserProfile) sbUserProfile.style.display = 'flex';
+      if (sbUserAvatar) sbUserAvatar.src = userPic;
+      if (sbUserName) sbUserName.textContent = userName;
+      if (sbUserEmail) sbUserEmail.textContent = userEmail;
     } else {
       if (loginBtn) loginBtn.style.display = 'inline-flex';
       if (profileWrap) profileWrap.style.display = 'none';
       if (welcomeBanner) welcomeBanner.style.display = 'none';
+
+      // 모바일 사이드바 미로그인 상태 동기화
+      const sbLoginBtn = document.getElementById('sidebar-login-btn');
+      const sbUserProfile = document.getElementById('sidebar-user-profile');
+      if (sbLoginBtn) sbLoginBtn.style.display = 'flex';
+      if (sbUserProfile) sbUserProfile.style.display = 'none';
+
       this.closeProfileDropdown();
     }
   }

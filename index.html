@@ -193,10 +193,10 @@
       </div>
     </div>
 
-    <!-- 모바일 사이드 드로어 네비게이션 -->
+    <!-- 모바일 사이드 드로어 네비게이션 (모바일에서 PC의 모든 고급 기능 완벽 사용) -->
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <a href="#" class="brand-link">
+      <div class="sidebar-header">
+        <a href="#" class="brand-link" id="sidebar-brand-link">
           <div class="ytm-logo-circle">
             <svg viewBox="0 0 24 24" width="22" height="22">
               <circle cx="12" cy="12" r="11" fill="#ff0000"/>
@@ -206,21 +206,81 @@
           </div>
           <span class="brand-name">Streamvance</span>
         </a>
+        <button class="sidebar-close-btn" id="sidebar-close-btn" aria-label="사이드바 닫기">
+          <i data-lucide="x"></i>
+        </button>
       </div>
-      <nav class="sidebar-nav">
-        <button class="nav-item active" data-nav="home">
-          <i data-lucide="home"></i>
-          <span>홈</span>
-        </button>
-        <button class="nav-item" data-nav="explore">
-          <i data-lucide="compass"></i>
-          <span>둘러보기</span>
-        </button>
-        <button class="nav-item" data-nav="library">
-          <i data-lucide="library"></i>
-          <span>보관함</span>
-        </button>
-      </nav>
+
+      <div class="sidebar-scroll-content">
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-nav="home">
+            <i data-lucide="home"></i>
+            <span>홈</span>
+          </button>
+          <button class="nav-item" data-nav="explore">
+            <i data-lucide="compass"></i>
+            <span>둘러보기</span>
+          </button>
+          <button class="nav-item" data-nav="library">
+            <i data-lucide="library"></i>
+            <span>보관함</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section-title">음악 & AI 도구</div>
+        <nav class="sidebar-nav">
+          <button class="nav-item nav-item-special" id="sidebar-menu-taste">
+            <i data-lucide="sparkles"></i>
+            <span>내 음악 취향 DNA</span>
+          </button>
+          <button class="nav-item" id="sidebar-menu-takeout">
+            <i data-lucide="file-up"></i>
+            <span>YouTube 기록 가져오기</span>
+          </button>
+          <button class="nav-item" id="sidebar-menu-history">
+            <i data-lucide="history"></i>
+            <span>시청 / 감상 기록</span>
+          </button>
+          <button class="nav-item" id="sidebar-menu-likes">
+            <i data-lucide="thumbs-up"></i>
+            <span>좋아요 표시한 음악</span>
+          </button>
+          <button class="nav-item" id="sidebar-menu-upload">
+            <i data-lucide="upload-cloud"></i>
+            <span>내 기기 음원 추가</span>
+          </button>
+          <button class="nav-item" id="sidebar-menu-cast">
+            <i data-lucide="cast"></i>
+            <span>기기에 연결 (Cast)</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- 모바일 사이드바 계정 관리 영역 -->
+        <div class="sidebar-account-area" id="sidebar-account-area">
+          <button class="sidebar-login-btn" id="sidebar-login-btn">
+            <i data-lucide="log-in"></i>
+            <span>Google 로그인</span>
+          </button>
+
+          <div class="sidebar-user-profile" id="sidebar-user-profile" style="display: none;">
+            <div class="sidebar-user-row">
+              <img src="" id="sidebar-user-avatar" alt="User Avatar" class="sidebar-user-avatar">
+              <div class="sidebar-user-info">
+                <span class="sidebar-user-name" id="sidebar-user-name">사용자</span>
+                <span class="sidebar-user-email" id="sidebar-user-email">user@gmail.com</span>
+              </div>
+            </div>
+            <button class="sidebar-logout-btn" id="sidebar-logout-btn">
+              <i data-lucide="log-out"></i>
+              <span>로그아웃</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </aside>
     <div class="sidebar-mobile-backdrop" id="sidebar-mobile-backdrop"></div>
 

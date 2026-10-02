@@ -415,9 +415,9 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         return title.strip()
 
 if __name__ == '__main__':
-    # 포트 재사용 옵션 적용
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), MusicAppHandler) as httpd:
+    # 멀티스레드 동시 처리 및 포트 재사용 옵션 적용
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("", PORT), MusicAppHandler) as httpd:
         print(f"Server started at http://localhost:{PORT}")
         try:
             httpd.serve_forever()

@@ -1097,13 +1097,30 @@ function initApp() {
     });
   }
 
-  // 모바일 하단 서랍 (가사 / 대기열 / 관련 항목 드로어 슬라이드 업)
+  // 모바일 하단 서랍 (가사 / 대기열 / 관련 항목 드로어 슬라이드 업 & 터치 스와이프 제스처)
   const mobileDrawerHandle = document.getElementById('mobile-drawer-drag-bar');
   const modalContentPanel = document.getElementById('modal-content-panel');
   if (mobileDrawerHandle && modalContentPanel) {
     mobileDrawerHandle.addEventListener('click', () => {
       modalContentPanel.classList.toggle('drawer-expanded');
     });
+
+    let touchStartY = 0;
+    mobileDrawerHandle.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    mobileDrawerHandle.addEventListener('touchend', (e) => {
+      const touchEndY = e.changedTouches[0].clientY;
+      const diffY = touchStartY - touchEndY;
+      if (diffY > 35) {
+        // 위로 스와이프 -> 확장
+        modalContentPanel.classList.add('drawer-expanded');
+      } else if (diffY < -35) {
+        // 아래로 스와이프 -> 닫기
+        modalContentPanel.classList.remove('drawer-expanded');
+      }
+    }, { passive: true });
   }
 
   // 3-dots 메뉴 팝업 바텀시트 (Screenshot 2 매칭)
@@ -2087,6 +2104,68 @@ function initApp() {
     if (sidebarBackdrop) sidebarBackdrop.classList.toggle('active', shouldOpen);
   };
 
+  const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
+  if (sidebarCloseBtn) {
+    sidebarCloseBtn.addEventListener('click', () => toggleMobileSidebar(false));
+  }
+
+  // 모바일 사이드바 내 PC 기능 바로가기 이벤트 바인딩
+  document.getElementById('sidebar-brand-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    ui.switchView('home');
+    toggleMobileSidebar(false);
+  });
+
+  document.getElementById('sidebar-menu-taste')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    auth.openTasteModal();
+  });
+
+  document.getElementById('sidebar-menu-takeout')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    openTakeoutModal();
+  });
+
+  document.getElementById('sidebar-menu-history')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    closeModal();
+    ui.switchView('library');
+    document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('active'));
+    const histTab = document.querySelector('.lib-tab[data-lib="history"]');
+    if (histTab) histTab.classList.add('active');
+    ui.renderLibrary('history');
+  });
+
+  document.getElementById('sidebar-menu-likes')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    closeModal();
+    ui.switchView('library');
+    document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('active'));
+    const likedTab = document.querySelector('.lib-tab[data-lib="likes"]');
+    if (likedTab) likedTab.classList.add('active');
+    ui.renderLibrary('likes');
+  });
+
+  document.getElementById('sidebar-menu-upload')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    document.getElementById('local-audio-input')?.click();
+  });
+
+  document.getElementById('sidebar-menu-cast')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    document.getElementById('btn-cast-device')?.click();
+  });
+
+  document.getElementById('sidebar-login-btn')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    auth.openSignInModal();
+  });
+
+  document.getElementById('sidebar-logout-btn')?.addEventListener('click', () => {
+    toggleMobileSidebar(false);
+    auth.logout();
+  });
+
   if (mobileMenuBtn) {
     mobileMenuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2099,6 +2178,17 @@ function initApp() {
     sidebarBackdrop.addEventListener('touchend', (e) => {
       e.preventDefault();
       toggleMobileSidebar(false);
+    });
+  }
+
+  // 모바일 하단 플레이어 바 탭 시 전체화면 플레이어 모달 열기 (버튼 클릭 제외)
+  const playerBarEl = document.getElementById('player-bar');
+  if (playerBarEl) {
+    playerBarEl.addEventListener('click', (e) => {
+      if (window.innerWidth <= 768) {
+        if (e.target.closest('button') || e.target.closest('input')) return;
+        openModal();
+      }
     });
   }
 
@@ -2122,7 +2212,7 @@ function initApp() {
     });
   });
 
-  // 사이드바 내의 항목 클릭 시 모바일이면 사이드바 닫기
+  // 사이드바 내 네비게이션 버튼 클릭 시 모바일이면 사이드바 닫기
   document.querySelectorAll('.sidebar-nav .nav-item, .playlist-item').forEach(el => {
     el.addEventListener('click', () => {
       if (window.innerWidth <= 768) {
