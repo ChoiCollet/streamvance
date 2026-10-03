@@ -71,6 +71,8 @@ export class YouTubeSearchService {
           } else if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
             normalized = {
               artist: data.artist || null,
+              isPlaylist: !!data.isPlaylist,
+              playlist: data.playlist || null,
               tracks: data.tracks,
               songs: data.songs || data.tracks.filter(t => !t.isCompilation),
               videos: data.videos || data.tracks.filter(t => t.isCompilation)

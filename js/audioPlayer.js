@@ -67,15 +67,19 @@ export class AudioPlayer {
                 this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
               } else if (event.data === 2) {
-                // 모바일 백그라운드 재생 가드: 모바일 화면 꺼짐 시 브라우저 강제 일시정지 방지
+                // 모바일 백그라운드 전환 가드: 무한 재시도 루프로 인한 사운드 끊김 및 노티 폭주 방지
                 if (typeof document !== 'undefined' && document.hidden && !this.isUserPaused) {
                   this.startBgKeepAlive();
                   this.syncMediaSessionPlaybackState();
-                  setTimeout(() => {
-                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-                      try { this.ytPlayer.playVideo(); } catch (e) {}
-                    }
-                  }, 120);
+                  if (!this._bgResumeAttempted) {
+                    this._bgResumeAttempted = true;
+                    setTimeout(() => {
+                      if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+                        try { this.ytPlayer.playVideo(); } catch (e) {}
+                      }
+                      setTimeout(() => { this._bgResumeAttempted = false; }, 3000);
+                    }, 300);
+                  }
                 } else {
                   this.isPlaying = false;
                   this.stopProgressSync();
@@ -205,18 +209,7 @@ export class AudioPlayer {
       document.addEventListener('visibilitychange', () => {
         if (this.isPlaying) {
           this.startBgKeepAlive();
-          if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-            setTimeout(() => {
-              if (this.isPlaying) {
-                try {
-                  const state = this.ytPlayer.getPlayerState();
-                  if (state === 2) { // 2 = PAUSED by browser background policy
-                    this.ytPlayer.playVideo();
-                  }
-                } catch (e) {}
-              }
-            }, 150);
-          }
+          this.syncMediaSessionPlaybackState();
         }
       });
     }

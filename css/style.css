@@ -1543,6 +1543,27 @@ a {
   letter-spacing: -0.4px;
 }
 
+.taste-dialog-header .auth-modal-close {
+  position: static !important;
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: #cccccc !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.taste-dialog-header .auth-modal-close:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .taste-header-card {
   background: linear-gradient(135deg, rgba(255, 0, 85, 0.14), rgba(120, 50, 255, 0.14));
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1938,17 +1959,27 @@ a {
 }
 
 .modal-header {
-  height: 54px;
-  display: none; /* 데스크톱에서는 상단 정품 헤더가 그대로 보이므로 숨김 */
+  height: 56px;
+  display: flex !important;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  position: relative;
+  z-index: 20;
 }
 
-.modal-header-spacer {
-  flex: 1;
+.modal-header .ytm-media-toggle-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.modal-header-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* 노래 | 동영상 전환 토글 세그먼트 (앨범 아트 바로 위에 완벽 정렬 - 윤하 스크린샷 100% 매칭) */
@@ -2836,7 +2867,21 @@ a {
     display: inline-flex !important;
     width: 36px;
     height: 36px;
-    color: #ffffff;
+    color: #aaaaaa !important;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .btn-modal-dislike-mobile:hover {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .btn-modal-dislike-mobile.disliked {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.22) !important;
   }
 
   .btn-modal-dislike-desktop {
@@ -4804,4 +4849,273 @@ a {
   background: rgba(255, 255, 255, 0.22);
   transform: scale(1.08);
 }
+
+/* ==========================================================================
+   6) 대기열 '=' 순서 이동 드래그 앤 드롭 스타일
+   ========================================================================== */
+.queue-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: #777777;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 6px;
+  transition: all var(--transition-fast);
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+}
+
+.queue-drag-handle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.queue-drag-handle:active {
+  cursor: grabbing;
+}
+
+.track-row-card.queue-card.dragging {
+  opacity: 0.45;
+  background: rgba(255, 0, 85, 0.15) !important;
+  border: 1px dashed rgba(255, 0, 85, 0.6);
+  transform: scale(0.98);
+}
+
+.track-row-card.queue-card.drag-over {
+  border-top: 2px solid #ff0055 !important;
+}
+
+/* ==========================================================================
+   7) YouTube Music 정품 계정 패널 (Screenshot 2 100% 일치 슬라이드인)
+   ========================================================================== */
+.account-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s;
+}
+
+.account-drawer-overlay.open {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+}
+
+.account-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.account-drawer-panel {
+  position: relative;
+  width: 340px;
+  max-width: 86vw;
+  height: 100%;
+  background: #0f0f0f;
+  color: #fff;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+  padding: 16px 0 calc(20px + env(safe-area-inset-bottom, 0px)) 0;
+  z-index: 2;
+}
+
+.account-drawer-overlay.open .account-drawer-panel {
+  transform: translateX(0);
+}
+
+.account-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 18px 14px 18px;
+}
+
+.account-close-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.account-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.account-drawer-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+/* 프로필 카드 */
+.account-profile-card {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  gap: 14px;
+}
+
+.account-avatar-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.account-avatar-circle {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #e91e63;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.5px;
+}
+
+.account-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-user-name {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-user-handle {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-google-link {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: #3ea6ff;
+  text-decoration: none;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.account-google-link:hover {
+  text-decoration: underline;
+}
+
+.account-switch-arrow {
+  color: #aaa;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.account-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 12px 0 8px 0;
+}
+
+.account-premium-header {
+  padding: 8px 20px 4px 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #888888;
+  letter-spacing: 0.6px;
+}
+
+/* 메뉴 목록 */
+.account-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 20px;
+  color: #e0e0e0;
+  background: transparent;
+  border: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.account-menu-item:hover,
+.account-menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.account-menu-item i {
+  width: 20px;
+  height: 20px;
+  color: #ccc;
+  flex-shrink: 0;
+}
+
+.account-menu-item.highlight-recap {
+  position: relative;
+}
+
+.recap-icon-box {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
 

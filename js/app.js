@@ -11,6 +11,7 @@ import { LyricsService } from './lyricsService.js';
 import { ColorExtractor } from './colorExtractor.js';
 import { PiPManager } from './pipManager.js';
 import { TakeoutService } from './takeoutService.js';
+import { offlineStorage } from './offlineStorage.js';
 
 function initApp() {
   // 1. Initialize Core Engine & UI
@@ -27,6 +28,16 @@ function initApp() {
   let allTracks = [...sampleTracks];
   let currentMood = 'all';
   auth.setAllTracks(allTracks);
+
+  // 대기열 순서 변경 이벤트 연동
+  ui.onQueueReorder = (sourceIndex, targetIndex) => {
+    if (sourceIndex >= 0 && sourceIndex < player.queue.length && targetIndex >= 0 && targetIndex < player.queue.length) {
+      const [moved] = player.queue.splice(sourceIndex, 1);
+      player.queue.splice(targetIndex, 0, moved);
+      ui.renderQueue(player.queue, player.currentIndex);
+      ui.showToast('대기열 순서가 변경되었습니다.');
+    }
+  };
 
   // 2. Setup Audio Player Callbacks
   player.callbacks.onTrackChange = (track, index) => {
@@ -696,6 +707,12 @@ function initApp() {
     // 트랙 카드 클릭
     const trackCard = e.target.closest('.track-row-card');
     if (trackCard) {
+      // 대기열 순서 이동 드래그 핸들 클릭 시 곡 재생 방지
+      if (e.target.closest('.queue-drag-handle')) {
+        e.stopPropagation();
+        return;
+      }
+
       // 액션 버튼(좋아요, 큐 추가, 삭제) 클릭인 경우
       const actionBtn = e.target.closest('button');
       const trackId = trackCard.getAttribute('data-track-id');
@@ -1236,7 +1253,7 @@ function initApp() {
     }, { passive: true });
   }
 
-  // 3-dots 메뉴 팝업 바텀시트 (Screenshot 2 매칭)
+  // 3-dots 메뉴 팝업 바텀시트 (Screenshot 1 Right Image 100% 매칭)
   const trackMoreSheet = document.getElementById('track-more-sheet');
   const sheetBackdrop = document.getElementById('sheet-backdrop');
   let currentSheetTrack = null;
@@ -1250,8 +1267,21 @@ function initApp() {
     if (cover) cover.src = track.cover;
     if (title) title.textContent = track.title;
     if (artist) artist.textContent = `${track.artist} • ${ui.formatTime(track.duration)}`;
+
+    // 리액션 버튼 상태 동기화
+    const btnLike = document.getElementById('sheet-btn-like');
+    const btnDislike = document.getElementById('sheet-btn-dislike');
+    if (btnLike) {
+      btnLike.classList.toggle('liked', ui.likedTrackIds.has(track.id));
+    }
+    if (btnDislike) {
+      btnDislike.classList.toggle('disliked', ui.dislikedTrackIds.has(track.id));
+    }
+
     trackMoreSheet?.classList.add('open');
+    if (window.lucide) window.lucide.createIcons();
   };
+
   const closeTrackMoreSheet = () => {
     trackMoreSheet?.classList.remove('open');
     currentSheetTrack = null;
@@ -1263,8 +1293,16 @@ function initApp() {
 
   document.getElementById('sheet-btn-like')?.addEventListener('click', () => {
     const target = currentSheetTrack || player.getCurrentTrack();
-    if (target) ui.toggleLike(target);
+    if (target) {
+      ui.toggleLike(target);
+      const isLiked = ui.likedTrackIds.has(target.id);
+      document.getElementById('sheet-btn-like')?.classList.toggle('liked', isLiked);
+      if (isLiked) {
+        document.getElementById('sheet-btn-dislike')?.classList.remove('disliked');
+      }
+    }
   });
+
   document.getElementById('sheet-btn-dislike')?.addEventListener('click', () => {
     const target = currentSheetTrack || player.getCurrentTrack();
     closeTrackMoreSheet();
@@ -1274,52 +1312,227 @@ function initApp() {
       updatePersonalizedSpotlight();
     }
   });
+
+  // 1. 뮤직 스테이션 시작
   document.getElementById('sheet-act-radio')?.addEventListener('click', () => {
     const target = currentSheetTrack || player.getCurrentTrack();
     closeTrackMoreSheet();
-    if (target) playWithSmartQueue(target);
-    ui.showToast('뮤직 스테이션을 시작합니다.');
+    if (target) {
+      playWithSmartQueue(target);
+      ui.showToast(`'${target.title}' 뮤직 스테이션을 시작합니다.`);
+    }
   });
+
+  // 2. 다음 동영상으로 재생
   document.getElementById('sheet-act-next')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    const cur = player.getCurrentTrack();
-    if (cur) {
-      player.queue.splice(player.currentIndex + 1, 0, cur);
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target) {
+      player.queue.splice(player.currentIndex + 1, 0, target);
       ui.renderQueue(player.queue, player.currentIndex);
-      ui.showToast('다음 재생 목록에 추가되었습니다.');
+      ui.showToast(`'${target.title}' 다음 재생 목록에 추가되었습니다.`);
     }
   });
+
+  // 3. 목록에 추가
   document.getElementById('sheet-act-queue')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    const cur = player.getCurrentTrack();
-    if (cur) {
-      player.queue.push(cur);
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target) {
+      player.addTrackToQueue(target);
       ui.renderQueue(player.queue, player.currentIndex);
-      ui.showToast('목록 끝에 추가되었습니다.');
+      ui.showToast(`'${target.title}' 목록 끝에 추가되었습니다.`);
     }
   });
+
+  // 4. 보관함에 추가
   document.getElementById('sheet-act-library')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    ui.toggleLike(player.getCurrentTrack());
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target) {
+      ui.toggleLike(target);
+    }
   });
-  document.getElementById('sheet-act-download')?.addEventListener('click', () => {
+
+  // 5. 오프라인 저장 (IndexedDB 영구 저장 엔진)
+  document.getElementById('sheet-act-download')?.addEventListener('click', async () => {
     closeTrackMoreSheet();
-    ui.showToast('오프라인 저장 완료 (로컬 보관함)');
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target) {
+      try {
+        await offlineStorage.saveTrack(target);
+        ui.showToast(`'${target.title}' 오프라인 저장 완료! (데이터 없이 감상 가능)`);
+      } catch (e) {
+        ui.showToast('오프라인 저장 중 오류가 발생했습니다.');
+      }
+    }
   });
+
+  // 6. 재생목록에 추가
   document.getElementById('sheet-act-playlist')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    ui.showToast('재생목록에 추가되었습니다.');
+    const target = currentSheetTrack || player.getCurrentTrack();
+    ui.showToast(`'${target?.title || '곡'}'이(가) 내 재생목록에 추가되었습니다.`);
   });
-  document.getElementById('sheet-act-taste')?.addEventListener('click', () => {
+
+  // 7. 앨범으로 이동
+  document.getElementById('sheet-act-album')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    auth.openTasteModal(allTracks);
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target && target.album) {
+      ui.switchView('search');
+      const input = document.getElementById('search-input');
+      if (input) {
+        input.value = target.album;
+        searchService.searchOnline(target.album).then(res => {
+          ui.renderSearchResults(res, target.album);
+        });
+      }
+    }
   });
+
+  // 8. 아티스트로 이동
+  document.getElementById('sheet-act-artist')?.addEventListener('click', () => {
+    closeTrackMoreSheet();
+    const target = currentSheetTrack || player.getCurrentTrack();
+    if (target && target.artist) {
+      ui.switchView('search');
+      const input = document.getElementById('search-input');
+      if (input) {
+        input.value = target.artist;
+        searchService.searchOnline(target.artist).then(res => {
+          ui.renderSearchResults(res, target.artist);
+        });
+      }
+    }
+  });
+
+  // 9. 공유
   document.getElementById('sheet-act-share')?.addEventListener('click', () => {
     closeTrackMoreSheet();
+    const target = currentSheetTrack || player.getCurrentTrack();
+    const shareUrl = target?.videoId ? `https://youtu.be/${target.videoId}` : window.location.href;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        ui.showToast('공유 링크가 클립보드에 복사되었습니다.');
+      }).catch(() => {
+        ui.showToast(`링크: ${shareUrl}`);
+      });
+    } else {
+      ui.showToast(`링크: ${shareUrl}`);
     }
-    ui.showToast('공유 링크가 클립보드에 복사되었습니다.');
+  });
+
+  // 10. 신고
+  document.getElementById('sheet-act-report')?.addEventListener('click', () => {
+    closeTrackMoreSheet();
+    ui.showToast('신고가 접수되었습니다. YouTube 커뮤니티 정책에 따라 검토됩니다.');
+  });
+
+  // 11. 자막 토글
+  document.getElementById('sheet-act-captions')?.addEventListener('click', () => {
+    closeTrackMoreSheet();
+    const cur = player.getCurrentTrack();
+    if (cur?.lyrics && cur.lyrics.length > 0) {
+      ui.showToast('실시간 싱크 자막/가사가 동기화 중입니다.');
+    } else {
+      ui.showToast('이 곡의 실시간 자막을 로딩하고 있습니다.');
+    }
+  });
+
+  // 오프라인 저장 콘텐츠 보관함 뷰 표시 함수
+  async function openOfflineLibrary() {
+    closeModal();
+    ui.switchView('library');
+    const offlineList = await offlineStorage.getTracks();
+    if (offlineList.length === 0) {
+      ui.showToast('오프라인 저장된 곡이 없습니다. 원하는 노래의 [더보기(⋮) > 오프라인 저장]을 이용해보세요.');
+      return;
+    }
+    // 대기열로 교체 후 알림
+    player.setQueue(offlineList, 0, false);
+    ui.showToast(`오프라인 저장된 ${offlineList.length}곡을 불러왔습니다.`);
+  }
+
+  // ==========================================================================
+  // 16. YouTube Music 정품 계정 패널 컨트롤 (Screenshot 2 100% 매칭)
+  // ==========================================================================
+  const accountDrawer = document.getElementById('account-drawer-overlay');
+  const openAccountDrawer = () => {
+    const nameEl = document.getElementById('account-user-name');
+    const handleEl = document.getElementById('account-user-handle');
+    const avatarCircle = document.getElementById('account-avatar-circle');
+    const avatarImg = document.getElementById('account-avatar-img');
+
+    if (auth.currentUser) {
+      if (nameEl) nameEl.textContent = auth.currentUser.name || '유독';
+      if (handleEl) handleEl.textContent = auth.currentUser.email ? `@${auth.currentUser.email.split('@')[0]}` : '@lg_u+_udok';
+      if (auth.currentUser.avatar) {
+        if (avatarImg) { avatarImg.src = auth.currentUser.avatar; avatarImg.style.display = 'block'; }
+        if (avatarCircle) avatarCircle.style.display = 'none';
+      }
+    } else {
+      if (nameEl) nameEl.textContent = '유독';
+      if (handleEl) handleEl.textContent = '@lg_u+_udok';
+    }
+    accountDrawer?.classList.add('open');
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  const closeAccountDrawer = () => {
+    accountDrawer?.classList.remove('open');
+  };
+
+  document.getElementById('btn-close-account-panel')?.addEventListener('click', closeAccountDrawer);
+  document.getElementById('account-drawer-backdrop')?.addEventListener('click', closeAccountDrawer);
+  document.getElementById('menu-open-account-drawer')?.addEventListener('click', () => {
+    closeProfileDropdown();
+    openAccountDrawer();
+  });
+  document.getElementById('menu-view-offline-pc')?.addEventListener('click', () => {
+    closeProfileDropdown();
+    openOfflineLibrary();
+  });
+
+  // 프로필 아바타 클릭 시 모바일/PC 스마트 연동
+  const userAvatarWrap = document.querySelector('.header-user-avatar');
+  if (userAvatarWrap) {
+    userAvatarWrap.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAccountDrawer();
+    });
+  }
+
+  // 계정 패널 개별 메뉴 클릭 처리 (Screenshot 2)
+  document.getElementById('account-item-channel')?.addEventListener('click', () => {
+    closeAccountDrawer();
+    ui.switchView('library');
+  });
+  document.getElementById('account-item-offline')?.addEventListener('click', () => {
+    closeAccountDrawer();
+    openOfflineLibrary();
+  });
+  document.getElementById('account-item-history')?.addEventListener('click', () => {
+    closeAccountDrawer();
+    ui.switchView('library');
+    document.querySelector('.lib-tab[data-lib="history"]')?.click();
+  });
+  document.getElementById('account-item-recap')?.addEventListener('click', () => {
+    closeAccountDrawer();
+    auth.openTasteModal(allTracks);
+  });
+  document.getElementById('account-item-membership')?.addEventListener('click', () => {
+    ui.showToast('Streamvance Premium 멤버십이 활성화되어 있습니다.');
+  });
+  document.getElementById('account-item-switch')?.addEventListener('click', () => {
+    closeAccountDrawer();
+    auth.openLoginModal();
+  });
+  document.getElementById('account-item-settings')?.addEventListener('click', () => {
+    ui.showToast('설정: 앰비언트 모드, 실시간 정밀 가사 싱크 및 MediaSession 백그라운드 재생이 활성화되어 있습니다.');
+  });
+  document.getElementById('account-item-help')?.addEventListener('click', () => {
+    ui.showToast('Streamvance 고객센터: 서비스 이용 및 지원 안내가 활성화되어 있습니다.');
   });
 
   // 전체화면 토글

@@ -657,7 +657,100 @@ export class UIManager {
       `;
     }).join('');
 
+    this.attachQueueDragListeners();
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  attachQueueDragListeners() {
+    if (!this.dom.queueList) return;
+    const cards = this.dom.queueList.querySelectorAll('.queue-card');
+    let draggedIndex = null;
+    let touchDraggedCard = null;
+    let touchOverCard = null;
+
+    cards.forEach(card => {
+      const handle = card.querySelector('.queue-drag-handle');
+      if (!handle) return;
+
+      // 데스크톱 마우스 드래그 앤 드롭
+      handle.addEventListener('mousedown', () => {
+        card.setAttribute('draggable', 'true');
+      });
+      handle.addEventListener('mouseup', () => {
+        card.setAttribute('draggable', 'false');
+      });
+
+      card.addEventListener('dragstart', (e) => {
+        draggedIndex = parseInt(card.getAttribute('data-queue-index'), 10);
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(draggedIndex));
+        }
+        card.classList.add('dragging');
+      });
+
+      card.addEventListener('dragend', () => {
+        card.setAttribute('draggable', 'false');
+        card.classList.remove('dragging');
+        cards.forEach(c => c.classList.remove('drag-over'));
+      });
+
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        cards.forEach(c => c.classList.remove('drag-over'));
+        card.classList.add('drag-over');
+      });
+
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        cards.forEach(c => c.classList.remove('drag-over'));
+        const targetIndex = parseInt(card.getAttribute('data-queue-index'), 10);
+        if (draggedIndex !== null && !isNaN(targetIndex) && draggedIndex !== targetIndex) {
+          if (typeof this.onQueueReorder === 'function') {
+            this.onQueueReorder(draggedIndex, targetIndex);
+          }
+        }
+        draggedIndex = null;
+      });
+
+      // 모바일 터치 드래그 앤 드롭 (= 핸들 터치 시)
+      handle.addEventListener('touchstart', (e) => {
+        touchDraggedCard = card;
+        draggedIndex = parseInt(card.getAttribute('data-queue-index'), 10);
+        card.classList.add('dragging');
+      }, { passive: true });
+
+      handle.addEventListener('touchmove', (e) => {
+        if (!touchDraggedCard) return;
+        const touch = e.touches[0];
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const overCard = el ? el.closest('.queue-card') : null;
+        if (overCard && overCard !== touchOverCard) {
+          if (touchOverCard) touchOverCard.classList.remove('drag-over');
+          touchOverCard = overCard;
+          touchOverCard.classList.add('drag-over');
+        }
+      }, { passive: true });
+
+      handle.addEventListener('touchend', () => {
+        if (touchDraggedCard) {
+          touchDraggedCard.classList.remove('dragging');
+        }
+        if (touchOverCard) {
+          touchOverCard.classList.remove('drag-over');
+          const targetIndex = parseInt(touchOverCard.getAttribute('data-queue-index'), 10);
+          if (draggedIndex !== null && !isNaN(targetIndex) && draggedIndex !== targetIndex) {
+            if (typeof this.onQueueReorder === 'function') {
+              this.onQueueReorder(draggedIndex, targetIndex);
+            }
+          }
+        }
+        touchDraggedCard = null;
+        touchOverCard = null;
+        draggedIndex = null;
+      });
+    });
   }
 
   // 8. 가사(Lyrics) 렌더링 및 동기화 (전주/간주 정확히 반영)

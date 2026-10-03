@@ -133,27 +133,19 @@
           </div>
           <div class="dropdown-divider"></div>
           <div class="dropdown-menu-list">
-            <button class="dropdown-menu-item" id="menu-view-taste">
-              <i data-lucide="sparkles"></i>
-              <span>내 음악 취향 DNA 리포트</span>
+            <button class="dropdown-menu-item" id="menu-open-account-drawer">
+              <i data-lucide="user-check"></i>
+              <span>계정 패널 열기</span>
             </button>
-            <button class="dropdown-menu-item" id="menu-view-history">
-              <i data-lucide="history"></i>
-              <span>시청 / 감상 기록</span>
+            <button class="dropdown-menu-item" id="menu-view-offline-pc">
+              <i data-lucide="download"></i>
+              <span>오프라인 저장 콘텐츠</span>
             </button>
-            <button class="dropdown-menu-item" id="menu-view-likes">
-              <i data-lucide="thumbs-up"></i>
-              <span>좋아요 표시한 음악</span>
-            </button>
-            <button class="dropdown-menu-item" id="menu-import-takeout">
-              <i data-lucide="file-up"></i>
-              <span>YouTube 기록 파일 가져오기 (Takeout)</span>
-            </button>
-            <div class="dropdown-divider"></div>
             <div class="dropdown-menu-item static">
               <i data-lucide="shield-check"></i>
               <span>Streamvance 프리미엄</span>
             </div>
+            <div class="dropdown-divider"></div>
             <button class="dropdown-menu-item item-danger" id="menu-logout">
               <i data-lucide="log-out"></i>
               <span>로그아웃</span>
@@ -634,35 +626,32 @@
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
-        <button class="icon-btn-modal" id="btn-modal-pip" title="화면 속 화면 (PIP 미니 플레이어)">
-          <i data-lucide="picture-in-picture-2"></i>
-        </button>
-        <!-- 모바일 비디오 안전 제어 버튼 (유튜브 iframe 클릭 인터셉트 방지) -->
-        <button class="icon-btn-modal" id="btn-modal-theater-toggle" title="대형 영상 모드 토글" style="display: none;">
-          <i data-lucide="expand"></i>
-        </button>
-        <div class="modal-header-spacer"></div>
-        <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
-          <i data-lucide="more-vertical"></i>
-        </button>
+
+        <!-- 노래 | 동영상 전환 토글 버튼 (상단 헤더 정중앙 배치 - Screenshot 1 100% 일치) -->
+        <div class="ytm-media-toggle-pill" id="media-mode-toggle">
+          <button class="media-toggle-btn active" data-mode="song" id="btn-mode-song">
+            <i data-lucide="music" style="width: 14px; height: 14px; margin-right: 5px;"></i>
+            <span>노래</span>
+          </button>
+          <button class="media-toggle-btn" data-mode="video" id="btn-mode-video">
+            <i data-lucide="video" style="width: 14px; height: 14px; margin-right: 5px;"></i>
+            <span>동영상</span>
+          </button>
+        </div>
+
+        <div class="modal-header-right-actions">
+          <button class="icon-btn-modal" id="btn-modal-pip" title="화면 속 화면 (PIP 미니 플레이어)">
+            <i data-lucide="picture-in-picture-2"></i>
+          </button>
+          <button class="icon-btn-modal" id="btn-modal-more" title="더보기">
+            <i data-lucide="more-vertical"></i>
+          </button>
+        </div>
       </div>
 
       <div class="modal-body">
-        <!-- 좌측: 비주얼 무대 (노래 | 동영상 토글 + 앨범 아트 OR 공식 영상 - 윤하 스크린샷 100% 매칭) -->
+        <!-- 좌측: 비주얼 무대 (앨범 아트 OR 공식 영상 - 윤하 스크린샷 100% 매칭) -->
         <div class="modal-visual-panel">
-          <!-- 노래 | 동영상 전환 토글 버튼 (앨범 아트 바로 위에 완벽 정렬) -->
-          <div class="visual-panel-toggle-wrap">
-            <div class="ytm-media-toggle-pill" id="media-mode-toggle">
-              <button class="media-toggle-btn active" data-mode="song" id="btn-mode-song">
-                <i data-lucide="music" style="width: 14px; height: 14px; margin-right: 5px;"></i>
-                <span>노래</span>
-              </button>
-              <button class="media-toggle-btn" data-mode="video" id="btn-mode-video">
-                <i data-lucide="video" style="width: 14px; height: 14px; margin-right: 5px;"></i>
-                <span>동영상</span>
-              </button>
-            </div>
-          </div>
 
           <div class="stage-media-wrap" id="stage-media-wrap">
             <!-- Song 모드: 고화질 정사각 앨범 커버 (우측 상단 PIP/전체화면 도구) -->
@@ -987,7 +976,7 @@
             <span>다음 동영상으로 재생</span>
           </button>
           <button class="sheet-action-item" id="sheet-act-queue">
-            <i data-lucide="plus-circle"></i>
+            <i data-lucide="list-music"></i>
             <span>목록에 추가</span>
           </button>
           <button class="sheet-action-item" id="sheet-act-library">
@@ -999,16 +988,101 @@
             <span>오프라인 저장</span>
           </button>
           <button class="sheet-action-item" id="sheet-act-playlist">
-            <i data-lucide="list-music"></i>
+            <i data-lucide="plus-square"></i>
             <span>재생목록에 추가</span>
           </button>
-          <button class="sheet-action-item" id="sheet-act-taste">
-            <i data-lucide="sparkles"></i>
-            <span>내 음악 취향 DNA 보기</span>
+          <button class="sheet-action-item" id="sheet-act-album">
+            <i data-lucide="disc"></i>
+            <span>앨범으로 이동</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-artist">
+            <i data-lucide="user"></i>
+            <span>아티스트로 이동</span>
           </button>
           <button class="sheet-action-item" id="sheet-act-share">
             <i data-lucide="share-2"></i>
             <span>공유</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-report">
+            <i data-lucide="flag"></i>
+            <span>신고</span>
+          </button>
+          <button class="sheet-action-item" id="sheet-act-captions">
+            <i data-lucide="subtitles"></i>
+            <span>자막</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- YouTube Music 정품 스타일 오른쪽 슬라이드인 계정 패널 (Screenshot 2 100% 매칭) -->
+    <div class="account-drawer-overlay" id="account-drawer-overlay">
+      <div class="account-drawer-backdrop" id="account-drawer-backdrop"></div>
+      <div class="account-drawer-panel" id="account-drawer-panel">
+        <div class="account-drawer-header">
+          <button class="account-close-btn" id="btn-close-account-panel" title="닫기" aria-label="닫기">
+            <i data-lucide="x"></i>
+          </button>
+          <h2 class="account-drawer-title">계정</h2>
+        </div>
+
+        <!-- 사용자 프로필 카드 -->
+        <div class="account-profile-card" id="account-profile-card">
+          <div class="account-avatar-wrap">
+            <div class="account-avatar-circle" id="account-avatar-circle">LG</div>
+            <img src="" id="account-avatar-img" class="account-avatar-img" style="display: none;" alt="User">
+          </div>
+          <div class="account-user-info">
+            <div class="account-user-name" id="account-user-name">유독</div>
+            <div class="account-user-handle" id="account-user-handle">@lg_u+_udok</div>
+            <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" class="account-google-link">Google 계정 관리</a>
+          </div>
+          <button class="account-switch-arrow" id="btn-account-switch-arrow" title="계정 관리">
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+
+        <div class="account-divider"></div>
+
+        <div class="account-premium-header">
+          <span>YOUTUBE PREMIUM</span>
+        </div>
+
+        <!-- 메뉴 목록 (Screenshot 2 100% 일치) -->
+        <div class="account-menu-list">
+          <button class="account-menu-item" id="account-item-channel">
+            <i data-lucide="user"></i>
+            <span>내 채널</span>
+          </button>
+          <button class="account-menu-item" id="account-item-offline">
+            <i data-lucide="download"></i>
+            <span>오프라인 저장 콘텐츠</span>
+          </button>
+          <button class="account-menu-item" id="account-item-history">
+            <i data-lucide="history"></i>
+            <span>기록</span>
+          </button>
+          <button class="account-menu-item highlight-recap" id="account-item-recap">
+            <div class="recap-icon-box">
+              <i data-lucide="rewind"></i>
+            </div>
+            <span>내 Recap</span>
+          </button>
+          <button class="account-menu-item" id="account-item-membership">
+            <i data-lucide="circle-dollar-sign"></i>
+            <span>유료 멤버십</span>
+          </button>
+          <button class="account-menu-item" id="account-item-switch">
+            <i data-lucide="users"></i>
+            <span>계정 전환</span>
+          </button>
+          <button class="account-menu-item" id="account-item-settings">
+            <i data-lucide="settings"></i>
+            <span>설정</span>
+          </button>
+          <button class="account-menu-item" id="account-item-help">
+            <i data-lucide="help-circle"></i>
+            <span>고객센터</span>
           </button>
         </div>
       </div>

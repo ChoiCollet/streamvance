@@ -35,6 +35,17 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(results)
             return
 
+        # 유튜브 재생목록 API 엔드포인트: /api/playlist?id=...
+        if parsed.path == '/api/playlist':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            pid = query_params.get('id', [''])[0].strip() or query_params.get('url', [''])[0].strip()
+            if not pid:
+                self.send_json({'error': 'No playlist ID provided', 'tracks': []})
+                return
+            playlist_data = self.fetch_youtube_playlist(pid)
+            self.send_json(playlist_data)
+            return
+
         # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts
         if parsed.path == '/api/charts':
             results = self.search_youtube('2026 K-POP 인기 차트 TOP 50')
@@ -242,8 +253,142 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             pass
         return None
 
+    def extract_playlist_id(self, input_str):
+        if not input_str:
+            return None
+        m = re.search(r'[?&]list=([a-zA-Z0-9_-]+)', input_str)
+        if m:
+            return m.group(1)
+        s = input_str.strip()
+        if re.match(r'^(PL|VLPL|RD|OLAK5uy_)[a-zA-Z0-9_-]+$', s):
+            return s.replace('VL', '', 1) if s.startswith('VLPL') else s
+        return None
+
+    def fetch_youtube_playlist(self, pid):
+        clean_pid = self.extract_playlist_id(pid) or pid.strip()
+        browse_id = clean_pid if clean_pid.startswith('VL') else f"VL{clean_pid}"
+        try:
+            url = 'https://www.youtube.com/youtubei/v1/browse'
+            payload = json.dumps({
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": "2.20240101.00.00",
+                        "hl": "ko",
+                        "gl": "KR"
+                    }
+                },
+                "browseId": browse_id
+            }).encode('utf-8')
+            req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                bdata = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            
+            header = bdata.get('header', {})
+            pl_header = header.get('playlistHeaderRenderer', {})
+            title = pl_header.get('title', {}).get('simpleText') or \
+                    (pl_header.get('title', {}).get('runs', [{}])[0].get('text', '') if pl_header.get('title', {}).get('runs') else '') or \
+                    bdata.get('metadata', {}).get('playlistMetadataRenderer', {}).get('title', '유튜브 재생목록')
+            author = (pl_header.get('ownerText', {}).get('runs', [{}])[0].get('text', 'YouTube') if pl_header.get('ownerText', {}).get('runs') else 'YouTube')
+            
+            tracks = []
+            tc = bdata.get('contents', {}).get('twoColumnBrowseResultsRenderer', {})
+            tabs = tc.get('tabs', [])
+            if tabs:
+                tab_content = tabs[0].get('tabRenderer', {}).get('content', {})
+                sec_list = tab_content.get('sectionListRenderer', {})
+                for c in sec_list.get('contents', []):
+                    item_sec = c.get('itemSectionRenderer', {})
+                    for it in item_sec.get('contents', []):
+                        if 'lockupViewModel' in it:
+                            lvm = it['lockupViewModel']
+                            vid = lvm.get('contentId')
+                            if not vid:
+                                continue
+                            meta = lvm.get('metadata', {}).get('lockupMetadataViewModel', {})
+                            v_title = meta.get('title', {}).get('content', '')
+                            m_rows = meta.get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
+                            v_artist = author
+                            v_duration = 210
+                            for row in m_rows:
+                                for part in row.get('metadataParts', []):
+                                    txt = part.get('text', {}).get('content', '')
+                                    if ':' in txt and txt.replace(':', '').isdigit():
+                                        pts = [int(p) for p in txt.split(':')]
+                                        v_duration = pts[0] * 60 + pts[1] if len(pts) == 2 else pts[0] * 3600 + pts[1] * 60 + pts[2]
+                                    elif txt and not txt.startswith('조회수') and not txt.endswith('전'):
+                                        v_artist = txt
+                            
+                            tracks.append({
+                                'id': f"yt-{vid}",
+                                'videoId': vid,
+                                'title': self.clean_title(v_title),
+                                'artist': v_artist,
+                                'album': title,
+                                'genre': 'pop',
+                                'mood': 'all',
+                                'duration': v_duration,
+                                'cover': f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                                'lyrics': [],
+                                'isLiked': False,
+                                'isPlaylistTrack': True
+                            })
+                        elif 'playlistVideoListRenderer' in it:
+                            for pv_item in it['playlistVideoListRenderer'].get('contents', []):
+                                pv = pv_item.get('playlistVideoRenderer', {})
+                                vid = pv.get('videoId')
+                                if not vid:
+                                    continue
+                                v_title = pv.get('title', {}).get('runs', [{}])[0].get('text', '') or pv.get('title', {}).get('simpleText', '')
+                                v_artist = pv.get('shortBylineText', {}).get('runs', [{}])[0].get('text', author)
+                                dur_str = str(pv.get('lengthSeconds', '210'))
+                                v_duration = int(dur_str) if dur_str.isdigit() else 210
+                                tracks.append({
+                                    'id': f"yt-{vid}",
+                                    'videoId': vid,
+                                    'title': self.clean_title(v_title),
+                                    'artist': v_artist,
+                                    'album': title,
+                                    'genre': 'pop',
+                                    'mood': 'all',
+                                    'duration': v_duration,
+                                    'cover': f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                                    'lyrics': [],
+                                    'isLiked': False,
+                                    'isPlaylistTrack': True
+                                })
+
+            return {
+                'id': clean_pid,
+                'title': title,
+                'author': author,
+                'trackCount': len(tracks),
+                'tracks': tracks
+            }
+        except Exception as e:
+            print(f"Error fetching playlist {clean_pid}: {e}", file=sys.stderr)
+            return {'id': clean_pid, 'title': '재생목록 로드 실패', 'author': '', 'trackCount': 0, 'tracks': []}
+
     def search_youtube(self, query):
         try:
+            # 재생목록 URL 혹은 ID 감지 시 즉각 재생목록 파싱 반환
+            pl_id = self.extract_playlist_id(query)
+            if pl_id:
+                pl_res = self.fetch_youtube_playlist(pl_id)
+                if pl_res and pl_res.get('tracks'):
+                    return {
+                        'artist': {
+                            'name': pl_res.get('title', '유튜브 재생목록'),
+                            'subscribers': f"{pl_res.get('author', 'YouTube')} • {pl_res.get('trackCount', 0)}곡",
+                            'avatar': pl_res['tracks'][0].get('cover', '')
+                        },
+                        'isPlaylist': True,
+                        'playlist': pl_res,
+                        'tracks': pl_res['tracks'],
+                        'songs': pl_res['tracks'],
+                        'videos': []
+                    }
+
             # 1차: YouTube 검색 웹 스크래핑
             search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}&sp=EgIQAQ%253D%253D"
             req = urllib.request.Request(
