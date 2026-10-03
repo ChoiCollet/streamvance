@@ -28,6 +28,7 @@ function initApp() {
   let allTracks = [...sampleTracks];
   let currentMood = 'all';
   auth.setAllTracks(allTracks);
+  ui.updateOfflineBadgeCount();
 
   // 대기열 순서 변경 이벤트 연동
   ui.onQueueReorder = (sourceIndex, targetIndex) => {
@@ -630,18 +631,149 @@ function initApp() {
     });
   }
 
-  // 캐스트 버튼
-  const btnCastDevice = document.getElementById('btn-cast-device');
-  if (btnCastDevice) {
-    btnCastDevice.addEventListener('click', () => {
-      if (player.audio && player.audio.remote && typeof player.audio.remote.prompt === 'function') {
-        player.audio.remote.prompt().catch(() => {
-          ui.showToast('사용 가능한 Cast / Bluetooth 기기를 찾는 중입니다...');
+  // ==========================================================================
+  // 기기 연결 및 블루투스 공유 모달 제어
+  // ==========================================================================
+  const deviceModal = document.getElementById('device-connect-modal');
+  const openDeviceModal = () => {
+    const cur = player.getCurrentTrack();
+    const coverEl = document.getElementById('device-modal-cover');
+    const titleEl = document.getElementById('device-modal-title');
+    const artistEl = document.getElementById('device-modal-artist');
+    if (cur) {
+      if (coverEl) coverEl.src = cur.cover;
+      if (titleEl) titleEl.textContent = cur.title;
+      if (artistEl) artistEl.textContent = `${cur.artist} • ${ui.formatTime(cur.duration)}`;
+    }
+    deviceModal?.classList.add('open');
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  const closeDeviceModal = () => {
+    deviceModal?.classList.remove('open');
+  };
+
+  document.getElementById('btn-close-device-modal')?.addEventListener('click', closeDeviceModal);
+  document.getElementById('device-modal-backdrop')?.addEventListener('click', closeDeviceModal);
+
+  // 1) 블루투스 오디오 기기 연결 (헤드폰/스피커)
+  async function connectBluetoothAudio() {
+    // 1-1. 브라우저 오디오 출력 장치 선택 (Chrome/Edge/Android Bluetooth Sink)
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.selectAudioOutput === 'function') {
+      try {
+        ui.showToast('오디오 출력 / 블루투스 기기 선택 창을 엽니다...');
+        const device = await navigator.mediaDevices.selectAudioOutput();
+        if (player.audio && typeof player.audio.setSinkId === 'function') {
+          await player.audio.setSinkId(device.deviceId);
+          ui.showToast(`'${device.label || '선택한 오디오 기기'}'(으)로 출력이 전환되었습니다.`);
+          closeDeviceModal();
+          return;
+        }
+      } catch (err) {
+        if (err.name !== 'NotFoundError' && err.name !== 'AbortError') {
+          console.warn('selectAudioOutput error, fallback to Bluetooth:', err);
+        } else {
+          return;
+        }
+      }
+    }
+
+    // 1-2. Web Bluetooth API 페어링 스캔 (실제 브라우저 Bluetooth 페어링 대화상자)
+    if (navigator.bluetooth && typeof navigator.bluetooth.requestDevice === 'function') {
+      try {
+        ui.showToast('주변 블루투스 기기를 검색하고 있습니다...');
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: ['generic_access', 'battery_service']
+        });
+        if (device) {
+          ui.showToast(`블루투스 기기 '${device.name || '알려지지 않은 기기'}'에 성공적으로 연결되었습니다.`);
+          closeDeviceModal();
+          return;
+        }
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          ui.showToast('블루투스 안내: ' + (err.message || '기기 연결이 취소되었습니다.'));
+        }
+        return;
+      }
+    }
+
+    ui.showToast('기기 설정의 Bluetooth 메뉴에서 스피커나 이어폰을 연결하면 사운드가 바로 출력됩니다.');
+  }
+
+  // 2) 근처 기기로 공유 (Quick Share / 블루투스 공유)
+  async function shareNearbyDevice() {
+    const cur = player.getCurrentTrack();
+    const shareUrl = cur?.videoId ? `https://youtu.be/${cur.videoId}` : window.location.href;
+    const shareData = {
+      title: cur ? `${cur.title} - Streamvance` : 'Streamvance Music',
+      text: cur ? `'${cur.artist} - ${cur.title}'을 Streamvance에서 함께 들어보세요!` : 'Streamvance 실시간 스트리밍',
+      url: shareUrl
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        ui.showToast('기기 공유가 시작되었습니다.');
+        closeDeviceModal();
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          navigator.clipboard?.writeText(shareUrl);
+          ui.showToast('공유 링크가 클립보드에 복사되었습니다.');
+        }
+      }
+    } else {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          ui.showToast('공유 링크가 클립보드에 복사되었습니다. (블루투스/Quick Share로 전송 가능)');
         });
       } else {
-        ui.showToast('기기 연결: 브라우저 메뉴 또는 전송 기능을 통해 오디오 기기를 연결할 수 있습니다.');
+        ui.showToast(`링크: ${shareUrl}`);
       }
-    });
+    }
+  }
+
+  // 3) 스마트 TV / Cast 전송
+  async function connectCastDevice() {
+    if (player.audio && player.audio.remote && typeof player.audio.remote.prompt === 'function') {
+      try {
+        await player.audio.remote.prompt();
+        ui.showToast('원격 기기(Cast) 연결 시도 중...');
+        closeDeviceModal();
+      } catch (e) {
+        ui.showToast('Cast 연결 취소 또는 사용 가능한 기기가 없습니다.');
+      }
+    } else {
+      ui.showToast('브라우저 우측 상단 메뉴(⋮) > [전송...]을 통해 스마트 TV 및 Chromecast로 전송할 수 있습니다.');
+    }
+  }
+
+  // 4) 링크 복사
+  function copyMusicLink() {
+    const cur = player.getCurrentTrack();
+    const shareUrl = cur?.videoId ? `https://youtu.be/${cur.videoId}` : window.location.href;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        ui.showToast('재생 링크가 클립보드에 복사되었습니다.');
+        closeDeviceModal();
+      }).catch(() => {
+        ui.showToast(`링크: ${shareUrl}`);
+      });
+    } else {
+      ui.showToast(`링크: ${shareUrl}`);
+    }
+  }
+
+  document.getElementById('btn-connect-bluetooth')?.addEventListener('click', connectBluetoothAudio);
+  document.getElementById('btn-share-nearby')?.addEventListener('click', shareNearbyDevice);
+  document.getElementById('btn-connect-cast')?.addEventListener('click', connectCastDevice);
+  document.getElementById('btn-copy-music-link')?.addEventListener('click', copyMusicLink);
+
+  // 캐스트 / 기기 연결 버튼
+  const btnCastDevice = document.getElementById('btn-cast-device');
+  if (btnCastDevice) {
+    btnCastDevice.addEventListener('click', openDeviceModal);
   }
 
   // 브라우저 뒤로/앞으로가기 히스토리 이벤트 연동
@@ -741,6 +873,11 @@ function initApp() {
           const targetId = actionBtn.getAttribute('data-track-id') || trackId;
           ui.deletePlayHistoryItem(targetId);
           updatePersonalizedQuickPicks();
+          return;
+        } else if (action === 'delete-offline') {
+          e.stopPropagation();
+          const targetId = actionBtn.getAttribute('data-track-id') || trackId;
+          ui.deleteOfflineItem(targetId);
           return;
         } else if (action === 'remove-queue') {
           e.stopPropagation();
@@ -1314,12 +1451,25 @@ function initApp() {
   });
 
   // 1. 뮤직 스테이션 시작
-  document.getElementById('sheet-act-radio')?.addEventListener('click', () => {
+  document.getElementById('sheet-act-radio')?.addEventListener('click', async () => {
     const target = currentSheetTrack || player.getCurrentTrack();
     closeTrackMoreSheet();
     if (target) {
       playWithSmartQueue(target);
       ui.showToast(`'${target.title}' 뮤직 스테이션을 시작합니다.`);
+      // 큐가 적으면 온라인에서 아티스트 곡을 실시간 추가하여 스테이션 자동 확장
+      if (player.queue.length < 8 && target.artist) {
+        try {
+          const res = await searchService.searchOnline(`${target.artist} 노래`);
+          const moreTracks = Array.isArray(res) ? res : (res.tracks || res.songs || []);
+          moreTracks.forEach(t => {
+            if (!player.queue.find(q => q.id === t.id || (t.videoId && q.videoId === t.videoId))) {
+              player.queue.push(t);
+            }
+          });
+          ui.renderQueue(player.queue, player.currentIndex);
+        } catch (e) {}
+      }
     }
   });
 
@@ -1361,6 +1511,7 @@ function initApp() {
     if (target) {
       try {
         await offlineStorage.saveTrack(target);
+        await ui.updateOfflineBadgeCount();
         ui.showToast(`'${target.title}' 오프라인 저장 완료! (데이터 없이 감상 가능)`);
       } catch (e) {
         ui.showToast('오프라인 저장 중 오류가 발생했습니다.');
@@ -1372,22 +1523,35 @@ function initApp() {
   document.getElementById('sheet-act-playlist')?.addEventListener('click', () => {
     closeTrackMoreSheet();
     const target = currentSheetTrack || player.getCurrentTrack();
-    ui.showToast(`'${target?.title || '곡'}'이(가) 내 재생목록에 추가되었습니다.`);
+    if (target) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('streamvance_user_playlists') || '[]');
+        let defaultPl = stored.find(p => p.id === 'user-pl-default');
+        if (!defaultPl) {
+          defaultPl = { id: 'user-pl-default', title: '내가 만든 재생목록', tracks: [] };
+          stored.push(defaultPl);
+        }
+        if (!defaultPl.tracks.find(t => t.id === target.id || (t.videoId && t.videoId === target.videoId))) {
+          defaultPl.tracks.push(target);
+          localStorage.setItem('streamvance_user_playlists', JSON.stringify(stored));
+        }
+      } catch (e) {}
+      ui.showToast(`'${target.title}'이(가) 내 재생목록에 추가되었습니다.`);
+    }
   });
 
   // 7. 앨범으로 이동
   document.getElementById('sheet-act-album')?.addEventListener('click', () => {
     closeTrackMoreSheet();
     const target = currentSheetTrack || player.getCurrentTrack();
-    if (target && target.album) {
+    if (target) {
+      closeModal();
       ui.switchView('search');
-      const input = document.getElementById('search-input');
-      if (input) {
-        input.value = target.album;
-        searchService.searchOnline(target.album).then(res => {
-          ui.renderSearchResults(res, target.album);
-        });
-      }
+      const q = (target.album && target.album !== 'YouTube Music Stream') ? target.album : `${target.artist} ${target.title}`;
+      if (ui.dom.searchInput) ui.dom.searchInput.value = q;
+      if (ui.dom.mobileSearchInput) ui.dom.mobileSearchInput.value = q;
+      executeSearch(q, 'album');
+      ui.showToast(`앨범 '${q}' 검색 결과를 불러옵니다.`);
     }
   });
 
@@ -1396,62 +1560,68 @@ function initApp() {
     closeTrackMoreSheet();
     const target = currentSheetTrack || player.getCurrentTrack();
     if (target && target.artist) {
+      closeModal();
       ui.switchView('search');
-      const input = document.getElementById('search-input');
-      if (input) {
-        input.value = target.artist;
-        searchService.searchOnline(target.artist).then(res => {
-          ui.renderSearchResults(res, target.artist);
-        });
-      }
+      if (ui.dom.searchInput) ui.dom.searchInput.value = target.artist;
+      if (ui.dom.mobileSearchInput) ui.dom.mobileSearchInput.value = target.artist;
+      executeSearch(target.artist);
+      ui.showToast(`아티스트 '${target.artist}' 검색 결과를 불러옵니다.`);
     }
   });
 
-  // 9. 공유
+  // 9. 공유 (근처 기기 Bluetooth / Quick Share / 링크 복사)
   document.getElementById('sheet-act-share')?.addEventListener('click', () => {
     closeTrackMoreSheet();
-    const target = currentSheetTrack || player.getCurrentTrack();
-    const shareUrl = target?.videoId ? `https://youtu.be/${target.videoId}` : window.location.href;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        ui.showToast('공유 링크가 클립보드에 복사되었습니다.');
-      }).catch(() => {
-        ui.showToast(`링크: ${shareUrl}`);
-      });
-    } else {
-      ui.showToast(`링크: ${shareUrl}`);
-    }
+    shareNearbyDevice();
   });
 
-  // 10. 신고
-  document.getElementById('sheet-act-report')?.addEventListener('click', () => {
+  // 10. 신고 (버튼은 유지하되 실제 신고/알림은 작동하지 않도록 무동작 처리 - 사용자 요청)
+  document.getElementById('sheet-act-report')?.addEventListener('click', (e) => {
+    e.preventDefault();
     closeTrackMoreSheet();
-    ui.showToast('신고가 접수되었습니다. YouTube 커뮤니티 정책에 따라 검토됩니다.');
+    // 사용자 요청: 신고 버튼은 유지한 채로 실제로 작동하지 않게 처리
   });
 
-  // 11. 자막 토글
+  // 11. 자막 토글 (실시간 비주얼 무대 자막 오버레이 및 가사 싱크)
+  let isCaptionsActive = false;
   document.getElementById('sheet-act-captions')?.addEventListener('click', () => {
     closeTrackMoreSheet();
+    isCaptionsActive = !isCaptionsActive;
+    const stageCcOverlay = document.getElementById('stage-cc-overlay');
+    if (stageCcOverlay) {
+      stageCcOverlay.style.display = isCaptionsActive ? 'block' : 'none';
+    }
     const cur = player.getCurrentTrack();
-    if (cur?.lyrics && cur.lyrics.length > 0) {
-      ui.showToast('실시간 싱크 자막/가사가 동기화 중입니다.');
+    if (isCaptionsActive) {
+      document.querySelector('.modal-tab[data-tab="lyrics"]')?.click();
+      if (window.innerWidth <= 768) {
+        document.getElementById('modal-content-panel')?.classList.add('drawer-expanded');
+      }
+      ui.showToast('실시간 싱크 자막이 활성화되었습니다.');
+      if (cur?.lyrics && cur.lyrics.length > 0) {
+        ui.updateLyricsSync(player.currentTime || 0, cur.lyrics);
+      }
     } else {
-      ui.showToast('이 곡의 실시간 자막을 로딩하고 있습니다.');
+      ui.showToast('실시간 자막이 꺼졌습니다.');
     }
   });
 
-  // 오프라인 저장 콘텐츠 보관함 뷰 표시 함수
+  // 오프라인 저장 콘텐츠 보관함 뷰 표시 함수 (정상 작동 보장)
   async function openOfflineLibrary() {
     closeModal();
+    auth.closeProfileDropdown();
+    closeAccountDrawer();
     ui.switchView('library');
+    document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('active'));
+    const offTab = document.querySelector('.lib-tab[data-lib="offline"]');
+    if (offTab) offTab.classList.add('active');
+    await ui.renderLibrary('offline', allTracks);
     const offlineList = await offlineStorage.getTracks();
     if (offlineList.length === 0) {
       ui.showToast('오프라인 저장된 곡이 없습니다. 원하는 노래의 [더보기(⋮) > 오프라인 저장]을 이용해보세요.');
-      return;
+    } else {
+      ui.showToast(`오프라인 저장 콘텐츠 (${offlineList.length}곡)`);
     }
-    // 대기열로 교체 후 알림
-    player.setQueue(offlineList, 0, false);
-    ui.showToast(`오프라인 저장된 ${offlineList.length}곡을 불러왔습니다.`);
   }
 
   // ==========================================================================
@@ -1486,11 +1656,11 @@ function initApp() {
   document.getElementById('btn-close-account-panel')?.addEventListener('click', closeAccountDrawer);
   document.getElementById('account-drawer-backdrop')?.addEventListener('click', closeAccountDrawer);
   document.getElementById('menu-open-account-drawer')?.addEventListener('click', () => {
-    closeProfileDropdown();
+    auth.closeProfileDropdown();
     openAccountDrawer();
   });
   document.getElementById('menu-view-offline-pc')?.addEventListener('click', () => {
-    closeProfileDropdown();
+    auth.closeProfileDropdown();
     openOfflineLibrary();
   });
 
@@ -2236,12 +2406,16 @@ function initApp() {
     });
   }
 
-  // 프로필 아바타 클릭 시 YouTube Music 정품 스타일 드롭다운 메뉴 토글
+  // 프로필 아바타 클릭 시 YouTube Music 정품 스타일 드롭다운 또는 계정 드로어 열기
   const userProfileWrap = document.getElementById('user-profile-wrap');
   if (userProfileWrap) {
     userProfileWrap.addEventListener('click', (e) => {
       e.stopPropagation();
-      auth.toggleProfileDropdown();
+      if (window.innerWidth <= 768) {
+        openAccountDrawer();
+      } else {
+        auth.toggleProfileDropdown();
+      }
     });
   }
 

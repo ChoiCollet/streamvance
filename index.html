@@ -474,6 +474,7 @@
             <div class="library-tabs">
               <button class="lib-tab active" data-lib="likes">좋아요 표시한 곡 (<span id="likes-count">0</span>)</button>
               <button class="lib-tab" data-lib="history">최근 재생한 곡</button>
+              <button class="lib-tab" data-lib="offline">오프라인 저장 (<span id="offline-count">0</span>)</button>
               <button class="lib-tab" data-lib="local">내 로컬 파일</button>
             </div>
           </div>
@@ -688,6 +689,11 @@
                   <i data-lucide="maximize"></i>
                 </button>
               </div>
+            </div>
+
+            <!-- 실시간 동기화 자막 (가사 CC) 오버레이 -->
+            <div class="stage-cc-overlay" id="stage-cc-overlay" style="display: none;">
+              <span class="stage-cc-text" id="stage-cc-text"></span>
             </div>
           </div>
 
@@ -942,6 +948,85 @@
           </div>
 
           <div id="takeout-status-msg" style="margin-top: 12px; font-size: 0.82rem; text-align: center; color: #4ade80; display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 기기 연결 및 블루투스 공유 모달 -->
+    <div class="auth-modal" id="device-connect-modal">
+      <div class="modal-backdrop" id="device-modal-backdrop"></div>
+      <div class="google-signin-dialog" style="max-width: 440px;">
+        <div class="google-dialog-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="cast" style="color: #ff0055; width: 24px; height: 24px;"></i>
+            <div>
+              <h2 class="google-dialog-title" style="font-size: 1.15rem;">기기 연결 및 공유</h2>
+              <p class="google-dialog-subtitle">블루투스 기기 및 근처 기기로 음악 공유</p>
+            </div>
+          </div>
+          <button class="auth-modal-close" id="btn-close-device-modal">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div style="padding: 16px 20px;">
+          <div id="device-current-track-info" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 12px; margin-bottom: 16px;">
+            <img id="device-modal-cover" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100" style="width: 48px; height: 48px; border-radius: 6px; object-fit: cover;">
+            <div style="flex: 1; min-width: 0;">
+              <div id="device-modal-title" style="font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff;">재생 중인 곡 없음</div>
+              <div id="device-modal-artist" style="font-size: 0.8rem; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Streamvance Music</div>
+            </div>
+          </div>
+
+          <div class="device-actions-list" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- 블루투스 오디오 스피커/이어폰 연결 -->
+            <button class="device-option-btn" id="btn-connect-bluetooth" style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; cursor: pointer; text-align: left; width: 100%; transition: all 0.2s;">
+              <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i data-lucide="bluetooth" style="width: 20px; height: 20px;"></i>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.92rem; color: #fff;">블루투스 오디오 기기 연결</div>
+                <div style="font-size: 0.78rem; color: #aaa; margin-top: 2px;">무선 이어폰, 헤드폰, 블루투스 스피커 페어링</div>
+              </div>
+              <i data-lucide="chevron-right" style="color: #666; width: 18px; height: 18px;"></i>
+            </button>
+
+            <!-- 근처 기기로 공유 (Quick Share / Nearby Share / Bluetooth 공유) -->
+            <button class="device-option-btn" id="btn-share-nearby" style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; cursor: pointer; text-align: left; width: 100%; transition: all 0.2s;">
+              <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i data-lucide="share-2" style="width: 20px; height: 20px;"></i>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.92rem; color: #fff;">근처 기기로 공유 (Quick Share / 블루투스)</div>
+                <div style="font-size: 0.78rem; color: #aaa; margin-top: 2px;">스마트폰, 태블릿, PC로 무선 즉시 공유</div>
+              </div>
+              <i data-lucide="chevron-right" style="color: #666; width: 18px; height: 18px;"></i>
+            </button>
+
+            <!-- 스마트 TV / Cast 전송 -->
+            <button class="device-option-btn" id="btn-connect-cast" style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; cursor: pointer; text-align: left; width: 100%; transition: all 0.2s;">
+              <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i data-lucide="tv" style="width: 20px; height: 20px;"></i>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.92rem; color: #fff;">스마트 TV / Google Cast 전송</div>
+                <div style="font-size: 0.78rem; color: #aaa; margin-top: 2px;">Chromecast 및 원격 디스플레이/스피커 출력</div>
+              </div>
+              <i data-lucide="chevron-right" style="color: #666; width: 18px; height: 18px;"></i>
+            </button>
+
+            <!-- 링크 복사 -->
+            <button class="device-option-btn" id="btn-copy-music-link" style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; cursor: pointer; text-align: left; width: 100%; transition: all 0.2s;">
+              <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i data-lucide="link-2" style="width: 20px; height: 20px;"></i>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.92rem; color: #fff;">재생 링크 복사</div>
+                <div style="font-size: 0.78rem; color: #aaa; margin-top: 2px;">클립보드에 바로가기 URL 복사</div>
+              </div>
+              <i data-lucide="chevron-right" style="color: #666; width: 18px; height: 18px;"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>

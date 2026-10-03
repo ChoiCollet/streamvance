@@ -418,6 +418,8 @@ a {
   padding: 11px 18px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
   gap: 14px;
   color: #eeeeee;
   font-size: 0.88rem;
@@ -425,7 +427,6 @@ a {
   background: transparent;
   border: none;
   cursor: pointer;
-  text-align: left;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -5078,6 +5079,8 @@ a {
 .account-menu-item {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
   gap: 16px;
   padding: 13px 20px;
   color: #e0e0e0;
@@ -5086,7 +5089,6 @@ a {
   font-size: 0.92rem;
   font-weight: 500;
   cursor: pointer;
-  text-align: left;
   width: 100%;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
@@ -5116,6 +5118,59 @@ a {
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
+}
+
+/* ==========================================================================
+   기기 연결 및 블루투스 공유 모달 스타일
+   ========================================================================== */
+.device-option-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+.device-option-btn:active {
+  transform: scale(0.98);
+}
+
+/* 실시간 비주얼 무대 자막 오버레이 */
+.stage-cc-overlay {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 8px 22px;
+  border-radius: 24px;
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 600;
+  text-align: center;
+  max-width: 88%;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.75);
+  z-index: 100;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  letter-spacing: -0.2px;
+  line-height: 1.4;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* 오프라인 저장 뱃지 */
+.badge-offline-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-left: 6px;
 }
 
 

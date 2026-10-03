@@ -3,6 +3,7 @@
 // ==========================================================================
 
 import { sampleTracks } from './data.js';
+import { offlineStorage } from './offlineStorage.js';
 
 // 전역 썸네일 장애 방지 복구 핸들러 (hqdefault -> mqdefault -> SVG fallback)
 if (typeof window !== 'undefined') {
@@ -451,8 +452,8 @@ export class UIManager {
     `).join('');
   }
 
-  // 6. 보관함 렌더링 (좋아요 표시한 곡 & 시청/감상 기록 100% 실시간 반영)
-  renderLibrary(tabType = 'likes', allTracks = []) {
+  // 6. 보관함 렌더링 (좋아요 표시한 곡 & 시청/감상 기록 & 오프라인 저장 100% 실시간 반영)
+  async renderLibrary(tabType = 'likes', allTracks = []) {
     if (!this.dom.libraryContent) return;
     let targetTracks = [];
 
@@ -462,7 +463,16 @@ export class UIManager {
       targetTracks = this.playHistory;
     } else if (tabType === 'local') {
       targetTracks = this.localFiles;
+    } else if (tabType === 'offline') {
+      try {
+        targetTracks = await offlineStorage.getTracks();
+      } catch (e) {
+        targetTracks = [];
+      }
     }
+
+    // 오프라인 저장 뱃지 숫자 실시간 동기화
+    this.updateOfflineBadgeCount();
 
     // 시청 기록 전체 삭제 버튼 표시/숨김 제어
     if (this.dom.btnClearHistory) {
@@ -485,6 +495,10 @@ export class UIManager {
         emptyMsg = '추가된 로컬 음악이 없습니다.';
         emptySub = '컴퓨터의 MP3, WAV, FLAC 오디오 파일을 보관함에 추가해보세요.';
         icon = 'folder-open';
+      } else if (tabType === 'offline') {
+        emptyMsg = '오프라인 저장된 음악이 없습니다.';
+        emptySub = '노래의 더보기(⋮) 메뉴에서 [오프라인 저장]을 누르면 인터넷 연결 없이 언제든 감상할 수 있습니다.';
+        icon = 'download';
       }
 
       this.dom.libraryContent.innerHTML = `
@@ -511,6 +525,7 @@ export class UIManager {
         ${targetTracks.map(track => {
           const isCurrent = this.player.getCurrentTrack()?.id === track.id;
           const isLiked = this.likedTrackIds.has(track.id);
+          const isOfflineItem = tabType === 'offline' || track.isOffline;
           return `
             <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
               <div class="track-row-cover">
@@ -523,13 +538,21 @@ export class UIManager {
                 </div>
               </div>
               <div class="track-row-info">
-                <div class="track-row-title">${track.title}</div>
+                <div class="track-row-title">
+                  ${track.title}
+                  ${isOfflineItem ? '<span class="badge-offline-saved"><i data-lucide="download" style="width: 11px; height: 11px;"></i>저장됨</span>' : ''}
+                </div>
                 <div class="track-row-artist">${track.artist} • ${track.album || ''}</div>
               </div>
               <span class="track-row-duration">${this.formatTime(track.duration)}</span>
               <div class="track-row-actions">
                 ${tabType === 'history' ? `
                   <button class="btn-track-action btn-delete-history" data-action="delete-history" data-track-id="${track.id}" title="기록에서 삭제">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                ` : ''}
+                ${tabType === 'offline' ? `
+                  <button class="btn-track-action btn-delete-offline" data-action="delete-offline" data-track-id="${track.id}" title="오프라인 저장 삭제">
                     <i data-lucide="trash-2"></i>
                   </button>
                 ` : ''}
@@ -546,6 +569,28 @@ export class UIManager {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  // 오프라인 저장 뱃지 개수 업데이트
+  async updateOfflineBadgeCount() {
+    try {
+      const tracks = await offlineStorage.getTracks();
+      const countEl = document.getElementById('offline-count');
+      if (countEl) countEl.textContent = tracks.length;
+    } catch (e) {}
+  }
+
+  // 오프라인 저장 항목 개별 삭제
+  async deleteOfflineItem(trackId) {
+    if (!trackId) return;
+    try {
+      await offlineStorage.removeTrack(trackId);
+      this.showToast('오프라인 저장 목록에서 삭제되었습니다.');
+      await this.renderLibrary('offline');
+      this.updateOfflineBadgeCount();
+    } catch (e) {
+      console.warn('deleteOfflineItem error:', e);
+    }
   }
 
   // 시청 / 재생 기록 개별 항목 삭제
@@ -864,6 +909,17 @@ export class UIManager {
 
     if (activeIndex >= 0 && lines[activeIndex]) {
       lines[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // 실시간 비주얼 무대 자막 (Stage CC) 동기화
+    const stageCcOverlay = document.getElementById('stage-cc-overlay');
+    const stageCcText = document.getElementById('stage-cc-text');
+    if (stageCcOverlay && stageCcText && stageCcOverlay.style.display !== 'none') {
+      if (activeIndex >= 0 && lyrics[activeIndex] && lyrics[activeIndex].text) {
+        stageCcText.textContent = lyrics[activeIndex].text;
+      } else {
+        stageCcText.textContent = '';
+      }
     }
   }
 
