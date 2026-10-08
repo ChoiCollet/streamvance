@@ -98,6 +98,7 @@ a {
   position: relative;
   background-color: var(--bg-base);
   overflow: hidden;
+  z-index: 10; /* 배경 뒤에 상주하는 백그라운드 비디오를 가려 사용자 UI를 완벽히 보호 */
 }
 
 /* ==========================================================================
@@ -2129,22 +2130,24 @@ a {
   transform: scale(1.08);
 }
 
-/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 백그라운드 재생 100% 보장 엔진)
-   노래 모드: 화면 좌측 상단 1px 무음/무간섭 배치로 하단 [홈] 버튼이나 어떤 모바일 UI도 절대 가리지 않음! */
+/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷 백그라운드 재생 100% 보장 엔진)
+   삼성인터넷 [백그라운드 재생: 켜기] 감지 조건(실제 비디오 규격 200px 이상, opacity: 1)을 100% 충족하면서,
+   앱 배경(#030303) 뒷단(z-index: 0)에 완벽 은폐 배치하여 하단 [홈] 버튼이나 어떤 모바일 UI도 절대 가리지 않음! */
 .yt-player-persistent-wrap {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   bottom: auto !important;
-  width: 1px !important;
-  height: 1px !important;
-  z-index: -9999 !important;
-  opacity: 0.001 !important;
+  width: 320px !important;
+  height: 240px !important;
+  z-index: 0 !important;
+  opacity: 1 !important;
   pointer-events: none !important;
   overflow: hidden !important;
-  background: transparent !important;
+  background: #000 !important;
   border: none !important;
-  clip-path: inset(50%) !important;
+  clip-path: none !important;
+  visibility: visible !important;
   transition: none !important;
 }
 
@@ -2156,7 +2159,7 @@ a {
   display: block !important;
 }
 
-/* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 자연스럽게 확대 배치 */
+/* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 자연스럽게 확대 배치 (클리핑 해제 및 z-index 999로 가시성 100% 보장) */
 body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
   top: calc(var(--header-height, 64px) + 24px) !important;
   left: 50% !important;
@@ -2165,9 +2168,10 @@ body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
   width: min(90vw, 540px) !important;
   aspect-ratio: 16 / 9 !important;
   height: auto !important;
-  z-index: 600 !important;
+  z-index: 999 !important;
   opacity: 1 !important;
   pointer-events: auto !important;
+  clip-path: none !important;
   border-radius: 12px !important;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
 }
@@ -2176,6 +2180,16 @@ body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
   body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
     top: calc(var(--header-height, 56px) + 16px) !important;
     width: calc(100vw - 32px) !important;
+    clip-path: none !important;
+    z-index: 999 !important;
+    aspect-ratio: 16 / 9 !important;
+  }
+
+  /* 모바일 대형 영상 모드 클릭 시 1:1 비율 대형 사이즈 (사용자 요청) */
+  body.player-modal-open.video-mode-active.modal-theater-mode .yt-player-persistent-wrap {
+    width: min(92vw, 420px) !important;
+    aspect-ratio: 1 / 1 !important;
+    height: auto !important;
   }
 }
 
@@ -2459,13 +2473,17 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
   position: relative;
   width: 100%;
   max-width: 440px;
+  max-height: 82vh !important;
   background: #212121;
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
-  padding: 18px 20px 28px 20px;
+  padding: 18px 20px calc(24px + env(safe-area-inset-bottom, 0px)) 20px;
   z-index: 1;
+  display: flex !important;
+  flex-direction: column !important;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.85);
   animation: sheetSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden !important;
 }
 
 @keyframes sheetSlideUp {
@@ -2478,6 +2496,7 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
   align-items: center;
   gap: 14px;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .sheet-cover {
@@ -2535,12 +2554,37 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 12px 0;
+  flex-shrink: 0;
 }
 
+/* 바텀시트 메뉴 항목 스크롤 및 우리 웹서비스 전용 세련된 커스텀 다크 스크롤바 */
 .sheet-actions-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto !important;
+  flex: 1 !important;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.sheet-actions-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sheet-actions-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sheet-actions-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}
+
+.sheet-actions-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
 }
 
 .sheet-action-item {
@@ -2827,36 +2871,9 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
     display: none !important;
   }
 
+  /* 모바일 미니 플레이어 바: 사진 요청대로 잡다한 반응 버튼 숨기고 오직 [▶ 재생/일시정지]와 [⏭ 다음]만 노출 */
   .player-track-reactions {
-    display: flex !important;
-    align-items: center;
-    gap: 2px;
-    margin-left: 6px;
-    flex-shrink: 0;
-  }
-
-  .player-track-reactions .btn-thumb {
-    width: auto;
-    min-width: 28px;
-    height: 30px;
-    padding: 0 4px;
-    border-radius: 15px;
-    color: #aaa;
-  }
-
-  .player-track-reactions .btn-thumb svg,
-  .player-track-reactions .btn-thumb i {
-    width: 16px;
-    height: 16px;
-  }
-
-  .player-track-reactions .player-bar-like-count,
-  .player-track-reactions .player-bar-comment-count {
-    font-size: 10px;
-    font-weight: 600;
-    margin-left: 3px;
-    color: #aaa;
-    letter-spacing: -0.2px;
+    display: none !important;
   }
 
   /* 5. 빠른 선곡 모바일 스와이프 그리드 & 액션 버튼 터치 상시 지원 */
@@ -2973,8 +2990,8 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
 
   .modal-track-titles {
     flex: 1;
-    text-align: left;
-    padding-right: 12px;
+    text-align: center;
+    padding: 0 8px;
     min-width: 0;
     overflow: hidden;
   }
@@ -5302,19 +5319,48 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
 .modal-song-title.marquee-active,
 #sheet-track-title.marquee-active {
   display: inline-block !important;
+  width: max-content !important;
+  max-width: none !important;
   white-space: nowrap !important;
+  overflow: visible !important;
   text-overflow: clip !important;
-  animation: titleMarqueeAnimation 9s ease-in-out infinite alternate !important;
-  will-change: transform;
+  animation: titleMarqueeOneWay 7.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite !important;
+  will-change: transform, opacity;
 }
 
-@keyframes titleMarqueeAnimation {
-  0%, 20% {
+@keyframes titleMarqueeOneWay {
+  0%, 18% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  78%, 88% {
+    transform: translateX(var(--marquee-distance, -60px));
+    opacity: 1;
+  }
+  88.01% {
+    opacity: 0;
     transform: translateX(0);
   }
-  80%, 100% {
-    transform: translateX(var(--marquee-distance, -40%));
+  92%, 100% {
+    opacity: 1;
+    transform: translateX(0);
   }
+}
+
+/* 보관함 전용 세로 리스트 (가로 스와이프 그리드 제약 없이 무한 세로 스크롤 보장) */
+.library-tracks-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-height: 200px !important;
+  padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.library-tracks-grid .track-row-card {
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: none !important;
 }
 
 /* ==========================================================================

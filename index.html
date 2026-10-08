@@ -7,6 +7,12 @@
   <meta name="description" content="Streamvance - 실시간 글로벌 차트, 맞춤 빠른 선곡 및 0.01초 정밀 동기화 가사 지원 웹 음악 스트리밍">
   <meta name="theme-color" content="#030303">
   
+  <!-- Open Graph & Social Sharing Meta Tags -->
+  <meta property="og:title" content="Streamvance">
+  <meta property="og:description" content="Streamvance - 실시간 글로벌 차트, 맞춤 빠른 선곡 및 0.01초 정밀 동기화 가사 지원 웹 음악 스트리밍">
+  <meta property="og:type" content="music.song">
+  <meta name="twitter:card" content="summary">
+  
   <!-- Favicon & PWA -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff0000'><circle cx='12' cy='12' r='10'/><polygon points='10 8 16 12 10 16 10 8' fill='%23ffffff'/></svg>">
   <link rel="manifest" href="manifest.json">
@@ -446,11 +452,11 @@
 
         <!-- 2. 둘러보기 (Explore View) -->
         <section class="view-panel" id="view-explore">
-          <div class="explore-hero-banner" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.7) 0%, rgba(20, 15, 25, 0.9) 100%), url('https://i.ytimg.com/vi/ekr2nIex040/maxresdefault.jpg') center/cover;">
+          <div class="explore-hero-banner" id="explore-hero-banner" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.7) 0%, rgba(20, 15, 25, 0.9) 100%), url('https://i.ytimg.com/vi/ekr2nIex040/maxresdefault.jpg') center/cover;">
             <div class="hero-content">
-              <span class="hero-badge">GLOBAL TOP 1</span>
-              <h1 class="hero-title">ROSÉ & Bruno Mars - APT.</h1>
-              <p class="hero-desc">전 세계를 뒤흔든 글로벌 메가 히트 싱글 'APT.'를 정밀 싱크 가사와 함께 들어보세요.</p>
+              <span class="hero-badge" id="explore-hero-badge">GLOBAL TOP 1</span>
+              <h1 class="hero-title" id="explore-hero-title">ROSÉ & Bruno Mars - APT.</h1>
+              <p class="hero-desc" id="explore-hero-desc">전 세계를 뒤흔든 글로벌 메가 히트 싱글 'APT.'를 정밀 싱크 가사와 함께 들어보세요.</p>
               <button class="btn-hero-play" id="btn-hero-play">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                   <polygon points="6 4 20 12 6 20 6 4"></polygon>
@@ -786,21 +792,19 @@
             </div>
           </div>
 
-          <!-- 하단 트랙 정보 (원래대로: [곡 정보] [👎 👍]) -->
+          <!-- 하단 트랙 정보 (사용자 요청: 좌측 싫어요 - 중앙 곡 정보 - 우측 좋아요 대칭 구조) -->
           <div class="modal-track-info-row">
+            <button class="btn-like-modal" id="btn-modal-dislike" title="싫어요">
+              <i data-lucide="thumbs-down"></i>
+            </button>
             <div class="modal-track-titles">
               <h1 class="modal-song-title" id="modal-song-title">재생 중인 곡 없음</h1>
               <p class="modal-song-artist" id="modal-song-artist">YouTube Music</p>
             </div>
-            <div class="modal-track-actions">
-              <button class="btn-like-modal" id="btn-modal-dislike" title="싫어요">
-                <i data-lucide="thumbs-down"></i>
-              </button>
-              <button class="btn-like-modal" id="btn-like-modal" title="좋아요">
-                <i data-lucide="thumbs-up"></i>
-                <span class="modal-like-count" id="modal-like-count" style="display: none; font-size: 13px; margin-left: 6px; font-weight: 600;"></span>
-              </button>
-            </div>
+            <button class="btn-like-modal" id="btn-modal-like" title="좋아요">
+              <i data-lucide="thumbs-up"></i>
+              <span class="modal-like-count" id="modal-like-count" style="display: none; font-size: 13px; margin-left: 6px; font-weight: 600;"></span>
+            </button>
           </div>
 
           <!-- YouTube Music 피쳐 액션 바 (좋아요 수, 싫어요, 댓글 수, 저장 - 스크린샷 100% 매칭) -->

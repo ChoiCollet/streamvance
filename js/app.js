@@ -449,11 +449,65 @@ function initApp() {
 
   let currentSpotlightIndex = 0;
 
-  // 아티스트 전환 함수: 0ms 즉각 반응 & 오직 선택된 아티스트 노래만 필터링 (사용자 요청 2, 3, 6번)
+  // 사용자 맞춤 개인화 아티스트 목록 동적 생성 (사용자 요청: 감상 이력 기반 개인화 추천)
+  function getPersonalizedSpotlightArtists() {
+    const defaultList = [...SPOTLIGHT_ARTISTS];
+    const artistScores = new Map();
+
+    // 1) 좋아요한 곡 아티스트 점수
+    if (ui.likedTracksMap) {
+      ui.likedTracksMap.forEach(t => {
+        if (t.artist) {
+          const mainArtist = t.artist.split(/[•,&/]/)[0].trim();
+          if (mainArtist && mainArtist.length >= 2) {
+            artistScores.set(mainArtist, (artistScores.get(mainArtist) || 0) + 5);
+          }
+        }
+      });
+    }
+
+    // 2) 최근 감상 기록 아티스트 점수
+    if (ui.playHistory) {
+      ui.playHistory.forEach(t => {
+        if (t.artist) {
+          const mainArtist = t.artist.split(/[•,&/]/)[0].trim();
+          if (mainArtist && mainArtist.length >= 2) {
+            artistScores.set(mainArtist, (artistScores.get(mainArtist) || 0) + 3);
+          }
+        }
+      });
+    }
+
+    if (artistScores.size === 0) return defaultList;
+
+    const sortedArtists = Array.from(artistScores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(entry => entry[0]);
+
+    const personalized = [];
+    sortedArtists.forEach(name => {
+      const match = defaultList.find(a => a.name.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(a.name.toLowerCase()));
+      if (match) {
+        if (!personalized.find(p => p.name === match.name)) personalized.push(match);
+      } else {
+        const sampleCover = allTracks.find(t => (t.artist || '').includes(name))?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500';
+        personalized.push({ name: name, query: name, image: sampleCover });
+      }
+    });
+
+    defaultList.forEach(a => {
+      if (!personalized.find(p => p.name === a.name)) personalized.push(a);
+    });
+
+    return personalized.slice(0, 10);
+  }
+
+  // 아티스트 전환 함수: 0ms 즉각 반응 & 오직 선택된 아티스트 노래만 필터링 (개인화 아티스트 반영)
   function switchSpotlightArtist(index) {
-    if (index < 0 || index >= SPOTLIGHT_ARTISTS.length) return;
+    const activeArtists = getPersonalizedSpotlightArtists();
+    if (index < 0 || index >= activeArtists.length) return;
     currentSpotlightIndex = index;
-    const artist = SPOTLIGHT_ARTISTS[index];
+    const artist = activeArtists[index];
 
     // 헤더 업데이트
     const spotlightTitle = document.getElementById('spotlight-artist-name');
@@ -477,9 +531,9 @@ function initApp() {
       }
     });
 
-    // 3) 0ms 즉시 화면 렌더링 (지연 제로!)
+    // 3) 0ms 즉시 화면 렌더링
     ui.renderSpotlight(artistTracks);
-    ui.renderSpotlightChips(SPOTLIGHT_ARTISTS, currentSpotlightIndex, (newIdx) => {
+    ui.renderSpotlightChips(activeArtists, currentSpotlightIndex, (newIdx) => {
       switchSpotlightArtist(newIdx);
     });
 
@@ -487,10 +541,10 @@ function initApp() {
     const spotlightList = document.getElementById('spotlight-tracks-list');
     if (spotlightList) spotlightList.scrollTo({ left: 0, behavior: 'auto' });
 
-    // 5) 백그라운드 프리패치 (현재 보고 있는 아티스트가 유지될 때만 비동기 보강)
+    // 5) 백그라운드 프리패치
     if (artistTracks.length < 6) {
       searchService.searchOnline(`${artist.query || artist.name} 노래`).then(searchRes => {
-        if (currentSpotlightIndex !== index) return; // 이미 다른 아티스트로 전환되었으면 무시
+        if (currentSpotlightIndex !== index) return;
         const onlineTracks = Array.isArray(searchRes) ? searchRes : (searchRes.tracks || searchRes.songs || []);
         let added = false;
         onlineTracks.forEach(ot => {
@@ -512,7 +566,7 @@ function initApp() {
   }
 
   // ==========================================================================
-  // 실시간 YouTube TOP 차트 로딩 (/api/charts)
+  // 실시간 YouTube TOP 차트 로딩 (/api/charts) 및 글로벌 TOP 1 동적 갱신
   // ==========================================================================
   async function loadLiveTopCharts() {
     try {
@@ -526,6 +580,33 @@ function initApp() {
             }
           });
           ui.renderTopCharts(chartTracks);
+
+          // 둘러보기 히어로 배너 GLOBAL TOP 1 동적 갱신 (사용자 요청: APT 고정 탈피 및 실시간 1위 반영)
+          const top1 = chartTracks[0];
+          const heroBanner = document.getElementById('explore-hero-banner');
+          const heroTitle = document.getElementById('explore-hero-title');
+          const heroDesc = document.getElementById('explore-hero-desc');
+          const btnHeroPlay = document.getElementById('btn-hero-play');
+
+          if (top1) {
+            if (heroBanner) {
+              const bgImg = top1.cover || 'https://i.ytimg.com/vi/ekr2nIex040/maxresdefault.jpg';
+              heroBanner.style.background = `linear-gradient(135deg, rgba(239, 68, 68, 0.75) 0%, rgba(20, 15, 25, 0.92) 100%), url('${bgImg}') center/cover`;
+            }
+            if (heroTitle) {
+              heroTitle.textContent = `${top1.artist} - ${top1.title}`;
+            }
+            if (heroDesc) {
+              heroDesc.textContent = `실시간 글로벌 인기 차트 1위를 질주 중인 '${top1.title}'을 고음질 스트리밍과 실시간 동기화 가사로 즐겨보세요.`;
+            }
+            if (btnHeroPlay) {
+              btnHeroPlay.onclick = () => {
+                player.setQueue([top1, ...chartTracks.slice(1)], 0, true);
+                ui.showToast(`글로벌 1위곡 '${top1.title}' 재생을 시작합니다.`);
+              };
+            }
+          }
+
           if (window.lucide) window.lucide.createIcons();
           return;
         }
@@ -536,8 +617,80 @@ function initApp() {
     ui.renderTopCharts(allTracks);
   }
 
+  // URL 파라미터(?v=... 또는 ?videoId=...)를 통한 공유 음악 즉시 로드 및 자동 재생
+  function handleSharedTrackFromUrl() {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shareVideoId = (urlParams.get('v') || urlParams.get('videoId') || urlParams.get('play') || urlParams.get('id') || '').trim();
+      if (!shareVideoId) return false;
+
+      // 1. 이미 앱 내 트랙이나 보관함에 존재하는지 확인
+      let targetTrack = allTracks.find(t => t.videoId === shareVideoId || t.id === shareVideoId || t.id === `yt_${shareVideoId}`) ||
+                        ui.likedTracksMap.get(shareVideoId) ||
+                        ui.playHistory.find(t => t.videoId === shareVideoId || t.id === shareVideoId);
+
+      const urlTitle = (urlParams.get('title') || urlParams.get('t') || '').trim();
+      const urlArtist = (urlParams.get('artist') || urlParams.get('a') || '').trim();
+
+      if (!targetTrack) {
+        targetTrack = {
+          id: `yt_${shareVideoId}`,
+          videoId: shareVideoId,
+          title: urlTitle || '공유된 음악 로딩 중...',
+          artist: urlArtist || 'Streamvance',
+          cover: `https://i.ytimg.com/vi/${shareVideoId}/hqdefault.jpg`,
+          duration: 0
+        };
+        allTracks.unshift(targetTrack);
+      } else {
+        if (urlTitle && (!targetTrack.title || targetTrack.title.includes('로딩 중'))) {
+          targetTrack.title = urlTitle;
+        }
+        if (urlArtist && (!targetTrack.artist || targetTrack.artist === 'Streamvance')) {
+          targetTrack.artist = urlArtist;
+        }
+      }
+
+      // 2. 스마트 큐 구성 및 즉시 재생 시작
+      playWithSmartQueue(targetTrack);
+      ui.updateCurrentTrackUI(targetTrack);
+      ui.showToast(`공유된 음악을 재생합니다: '${targetTrack.title}'`);
+
+      // 3. 메타데이터(곡 제목, 아티스트명, 고화질 썸네일) 비동기 정밀 보정 (YouTube oEmbed)
+      if (!urlTitle || targetTrack.title.includes('로딩 중')) {
+        fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(shareVideoId)}&format=json`)
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data && data.title) {
+              targetTrack.title = data.title;
+              targetTrack.artist = data.author_name || targetTrack.artist || '아티스트';
+              if (data.thumbnail_url) targetTrack.cover = data.thumbnail_url;
+
+              const cur = player.getCurrentTrack();
+              if (cur && (cur.videoId === shareVideoId || cur.id === targetTrack.id)) {
+                cur.title = targetTrack.title;
+                cur.artist = targetTrack.artist;
+                cur.cover = targetTrack.cover;
+                ui.updateCurrentTrackUI(cur);
+                player.updateMediaSession(cur);
+              }
+              ui.renderQueue(player.queue, player.currentIndex);
+            }
+          })
+          .catch(() => {});
+      }
+      return true;
+    } catch (e) {
+      console.warn("Shared track load failed:", e);
+      return false;
+    }
+  }
+
   // 3. Initial Queue & Data Setup
-  player.setQueue(allTracks, 0, false);
+  const hasSharedTrack = handleSharedTrackFromUrl();
+  if (!hasSharedTrack) {
+    player.setQueue(allTracks, 0, false);
+  }
   ui.updateLikesCount();
 
   // 4. Initial Views Render
@@ -703,31 +856,61 @@ function initApp() {
     ui.showToast('기기 설정의 Bluetooth 메뉴에서 스피커나 이어폰을 연결하면 사운드가 바로 출력됩니다.');
   }
 
-  // 2) 근처 기기로 공유 (Quick Share / 블루투스 공유)
-  async function shareNearbyDevice() {
-    const cur = player.getCurrentTrack();
-    const shareUrl = cur?.videoId ? `https://youtu.be/${cur.videoId}` : window.location.href;
+  // Streamvance 전용 음악 공유 URL 생성 함수 (유튜브 외부 링크 대신 우리 사이트 링크로 공유)
+  function getTrackShareUrl(track) {
+    if (!track) return window.location.href;
+    const vid = track.videoId || (typeof track.id === 'string' && track.id.startsWith('yt_') ? track.id.replace('yt_', '') : '');
+    if (!vid) return window.location.href;
+
+    try {
+      const origin = window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')
+        ? window.location.origin
+        : 'https://streamvance.pages.dev';
+      const pathname = window.location.pathname || '/';
+      const url = new URL(pathname, origin);
+      url.searchParams.set('v', vid);
+      return url.toString();
+    } catch (e) {
+      return `${window.location.origin || ''}/?v=${encodeURIComponent(vid)}`;
+    }
+  }
+
+  // 2) 근처 기기로 공유 (Quick Share / 블루투스 공유 / 모바일 시스템 공유)
+  async function shareNearbyDevice(trackToShare = null) {
+    const cur = trackToShare || currentSheetTrack || player.getCurrentTrack();
+    if (!cur) return;
+    const shareUrl = getTrackShareUrl(cur);
+
+    // 제목이랑 아티스트 - Streamvance 깔끔한 단일 포맷 (두 번 중복 출력 방지)
+    let shareLabel = (cur.title || '음악').trim();
+    const artist = (cur.artist || '').trim();
+    if (artist && artist !== 'Streamvance' && !shareLabel.toLowerCase().includes(artist.toLowerCase())) {
+      shareLabel = `${shareLabel} - ${artist}`;
+    }
+    const shareText = `${shareLabel} - Streamvance`;
+
+    // Chromium/안드로이드에서 title과 text를 모두 주면 'title - text'로 합쳐져 제목이 2번 반복되므로,
+    // text에만 정제된 단일 문구를 전달하여 '제목 - 아티스트 - Streamvance URL' 형태로 깔끔하게 1회만 노출
     const shareData = {
-      title: cur ? `${cur.title} - Streamvance` : 'Streamvance Music',
-      text: cur ? `'${cur.artist} - ${cur.title}'을 Streamvance에서 함께 들어보세요!` : 'Streamvance 실시간 스트리밍',
+      text: shareText,
       url: shareUrl
     };
 
     if (navigator.share) {
       try {
         await navigator.share(shareData);
-        ui.showToast('기기 공유가 시작되었습니다.');
+        ui.showToast('공유가 완료되었습니다.');
         closeDeviceModal();
       } catch (err) {
         if (err.name !== 'AbortError') {
-          navigator.clipboard?.writeText(shareUrl);
-          ui.showToast('공유 링크가 클립보드에 복사되었습니다.');
+          navigator.clipboard?.writeText(`${shareText}\n${shareUrl}`);
+          ui.showToast('Streamvance 음악 링크가 클립보드에 복사되었습니다.');
         }
       }
     } else {
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(shareUrl).then(() => {
-          ui.showToast('공유 링크가 클립보드에 복사되었습니다. (블루투스/Quick Share로 전송 가능)');
+        navigator.clipboard.writeText(`${shareText}\n${shareUrl}`).then(() => {
+          ui.showToast('Streamvance 음악 링크가 클립보드에 복사되었습니다. (블루투스/Quick Share로 전송 가능)');
         });
       } else {
         ui.showToast(`링크: ${shareUrl}`);
@@ -751,12 +934,13 @@ function initApp() {
   }
 
   // 4) 링크 복사
-  function copyMusicLink() {
-    const cur = player.getCurrentTrack();
-    const shareUrl = cur?.videoId ? `https://youtu.be/${cur.videoId}` : window.location.href;
+  function copyMusicLink(trackToCopy = null) {
+    const cur = trackToCopy || currentSheetTrack || player.getCurrentTrack();
+    if (!cur) return;
+    const shareUrl = getTrackShareUrl(cur);
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareUrl).then(() => {
-        ui.showToast('재생 링크가 클립보드에 복사되었습니다.');
+        ui.showToast('Streamvance 재생 링크가 클립보드에 복사되었습니다.');
         closeDeviceModal();
       }).catch(() => {
         ui.showToast(`링크: ${shareUrl}`);
@@ -767,9 +951,9 @@ function initApp() {
   }
 
   document.getElementById('btn-connect-bluetooth')?.addEventListener('click', connectBluetoothAudio);
-  document.getElementById('btn-share-nearby')?.addEventListener('click', shareNearbyDevice);
+  document.getElementById('btn-share-nearby')?.addEventListener('click', () => shareNearbyDevice());
   document.getElementById('btn-connect-cast')?.addEventListener('click', connectCastDevice);
-  document.getElementById('btn-copy-music-link')?.addEventListener('click', copyMusicLink);
+  document.getElementById('btn-copy-music-link')?.addEventListener('click', () => copyMusicLink());
 
   // 캐스트 / 기기 연결 버튼
   const btnCastDevice = document.getElementById('btn-cast-device');
@@ -1017,17 +1201,27 @@ function initApp() {
     }
   });
 
-  // 둘러보기 전용 장르 상세 열기 함수
+  // 둘러보기 전용 장르 상세 열기 함수 (장르 및 분위기별 맞춤 아티스트 및 실시간 추천 곡 로드)
   let currentGenreTracks = [];
   async function openGenreDetail(mood) {
     const genre = genresData.find(g => g.mood === mood) || { name: mood, color: '#ef4444', mood };
-    let genreTracks = allTracks.filter(t => t.genre === mood || t.mood === mood);
-    
-    // 곡 수가 적으면 온라인 검색으로 해당 장르 명곡 실시간 확보
-    if (genreTracks.length < 5) {
-      try {
-        const searchRes = await searchService.searchOnline(`${genre.name} 명곡 노래`);
-        const newTracks = Array.isArray(searchRes) ? searchRes : (searchRes.tracks || searchRes.songs || []);
+
+    // 장르/분위기별 전용 맞춤 검색 쿼리 (사용자 요청: 동일 아티스트 반복 탈피, 분위기와 장르에 맞는 진짜 추천)
+    const genreKeywords = {
+      "energy": "2026 K-POP 신곡 인기 댄스",
+      "all": "빌보드 글로벌 핫 100 인기 팝송",
+      "chill": "카페 칠 힐링 어쿠스틱 감성 인디 노래",
+      "workout": "피트니스 파워 헬스 힙합 EDM 운동 비트",
+      "focus": "집중 스터디 잔잔한 피아노 지브리 로파이 연주곡"
+    };
+
+    const targetQuery = genreKeywords[mood] || `${genre.name} 명곡 노래`;
+
+    // 해당 분위기/장르에 100% 매칭되는 곡들을 실시간으로 로드
+    try {
+      const searchRes = await searchService.searchOnline(targetQuery);
+      const newTracks = Array.isArray(searchRes) ? searchRes : (searchRes.tracks || searchRes.songs || []);
+      if (newTracks.length > 0) {
         newTracks.forEach(t => {
           t.genre = mood;
           t.mood = mood;
@@ -1035,10 +1229,16 @@ function initApp() {
             allTracks.push(t);
           }
         });
-        genreTracks = allTracks.filter(t => t.genre === mood || t.mood === mood);
-      } catch (e) {}
+        currentGenreTracks = newTracks;
+        ui.renderGenreDetail(genre.name, genre.color, newTracks);
+        return;
+      }
+    } catch (e) {
+      console.warn("Genre search online error:", e);
     }
-    
+
+    // 폴백 로컬 매칭
+    let genreTracks = allTracks.filter(t => t.genre === mood || t.mood === mood);
     currentGenreTracks = genreTracks;
     ui.renderGenreDetail(genre.name, genre.color, genreTracks);
   }
@@ -1571,10 +1771,11 @@ function initApp() {
     }
   });
 
-  // 9. 공유 (근처 기기 Bluetooth / Quick Share / 링크 복사)
+  // 9. 공유 (근처 기기 Bluetooth / Quick Share / Streamvance 링크 공유)
   document.getElementById('sheet-act-share')?.addEventListener('click', () => {
+    const target = currentSheetTrack || player.getCurrentTrack();
     closeTrackMoreSheet();
-    shareNearbyDevice();
+    shareNearbyDevice(target);
   });
 
   // 10. 신고 (버튼은 유지하되 실제 신고/알림은 작동하지 않도록 무동작 처리 - 사용자 요청)
@@ -1636,16 +1837,29 @@ function initApp() {
     const avatarCircle = document.getElementById('account-avatar-circle');
     const avatarImg = document.getElementById('account-avatar-img');
 
-    if (auth.currentUser) {
-      if (nameEl) nameEl.textContent = auth.currentUser.name || '유독';
-      if (handleEl) handleEl.textContent = auth.currentUser.email ? `@${auth.currentUser.email.split('@')[0]}` : '@lg_u+_udok';
-      if (auth.currentUser.avatar) {
-        if (avatarImg) { avatarImg.src = auth.currentUser.avatar; avatarImg.style.display = 'block'; }
-        if (avatarCircle) avatarCircle.style.display = 'none';
+    // 현재 사용자 정보 동기화 (사용자 요청: 핫핑크 LG 대신 실제 내 프로필 사진 및 이름 '최서원'/'서원'으로 동기화)
+    const currentName = auth.currentUser?.name || document.getElementById('welcome-user-name')?.textContent || '최서원';
+    const currentEmail = auth.currentUser?.email || 'seowon.choi@gmail.com';
+    const currentPic = auth.currentUser?.picture || auth.currentUser?.avatar;
+
+    if (nameEl) nameEl.textContent = currentName;
+    if (handleEl) handleEl.textContent = `@${currentEmail.split('@')[0]}`;
+
+    if (currentPic) {
+      if (avatarImg) {
+        avatarImg.src = currentPic;
+        avatarImg.style.display = 'block';
       }
+      if (avatarCircle) avatarCircle.style.display = 'none';
     } else {
-      if (nameEl) nameEl.textContent = '유독';
-      if (handleEl) handleEl.textContent = '@lg_u+_udok';
+      if (avatarCircle) {
+        avatarCircle.style.display = 'flex';
+        avatarCircle.textContent = currentName.length >= 2 ? currentName.slice(-2) : currentName;
+        avatarCircle.style.background = 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)';
+        avatarCircle.style.color = '#ffffff';
+        avatarCircle.style.fontWeight = '700';
+      }
+      if (avatarImg) avatarImg.style.display = 'none';
     }
     accountDrawer?.classList.add('open');
     if (window.lucide) window.lucide.createIcons();

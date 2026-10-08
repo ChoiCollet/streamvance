@@ -21,7 +21,7 @@ function formatCountKo(num) {
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const videoId = (url.searchParams.get('videoId') || '').trim();
+  const videoId = (url.searchParams.get('id') || url.searchParams.get('videoId') || '').trim();
 
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',

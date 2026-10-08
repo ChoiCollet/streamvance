@@ -3,7 +3,7 @@
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const videoId = (url.searchParams.get('videoId') || '').trim();
+  const videoId = (url.searchParams.get('id') || url.searchParams.get('videoId') || '').trim();
   const sort = (url.searchParams.get('sort') || 'top').trim();
 
   const headers = {

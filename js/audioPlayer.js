@@ -324,6 +324,17 @@ export class AudioPlayer {
           this.audio.play().catch(() => {});
         }
       }
+      if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+        if (this.isPlaying && !this.isUserPaused) {
+          try {
+            const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
+            if (state !== 1) {
+              this.ytPlayer.playVideo();
+              this.ensureAudioSound();
+            }
+          } catch (e) {}
+        }
+      }
     };
 
     const opts = { capture: true, passive: true };

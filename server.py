@@ -53,10 +53,10 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(results.get('tracks', []))
             return
 
-        # 유튜브 실시간 영상 메타(좋아요 수 등) API 엔드포인트: /api/video-details?id=...
+        # 유튜브 실시간 영상 메타(좋아요 수 등) API 엔드포인트: /api/video-details?id=...&videoId=...
         if parsed.path == '/api/video-details':
             query_params = urllib.parse.parse_qs(parsed.query)
-            vid = query_params.get('id', [''])[0].strip()
+            vid = query_params.get('id', [''])[0].strip() or query_params.get('videoId', [''])[0].strip()
             if not vid:
                 self.send_json({'error': 'No video ID', 'likeCount': '좋아요', 'rawLikeCount': 0})
                 return
@@ -64,10 +64,10 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(details)
             return
 
-        # 유튜브 실시간 댓글 API 엔드포인트: /api/comments?id=...&sort=top|new
+        # 유튜브 실시간 댓글 API 엔드포인트: /api/comments?id=...&videoId=...&sort=top|new
         if parsed.path == '/api/comments':
             query_params = urllib.parse.parse_qs(parsed.query)
-            vid = query_params.get('id', [''])[0].strip()
+            vid = query_params.get('id', [''])[0].strip() or query_params.get('videoId', [''])[0].strip()
             sort = query_params.get('sort', ['top'])[0].strip()
             if not vid:
                 self.send_json({'error': 'No video ID', 'commentCount': '0', 'comments': []})

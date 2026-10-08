@@ -531,7 +531,7 @@ export class UIManager {
     }
 
     this.dom.libraryContent.innerHTML = `
-      <div class="quick-picks-grid-ytm library-grid-layout" style="grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));">
+      <div class="library-tracks-grid">
         ${targetTracks.map(track => {
           const isCurrent = this.player.getCurrentTrack()?.id === track.id;
           const isLiked = this.likedTrackIds.has(track.id);
@@ -1360,7 +1360,7 @@ export class UIManager {
     }
   }
 
-  // 텍스트 길이 초과 시 매끄러운 Marquee 가로 흐름 애니메이션 적용
+  // 텍스트 길이 초과 시 매끄러운 Marquee 단방향 흐름 애니메이션 적용 (글자 잘림 없이 전체 텍스트 온전히 노출)
   applyMarqueeIfOverflow(el) {
     if (!el) return;
     el.classList.remove('marquee-active');
@@ -1369,8 +1369,8 @@ export class UIManager {
       const parent = el.parentElement;
       const parentWidth = parent ? parent.clientWidth : el.clientWidth;
       const scrollWidth = el.scrollWidth;
-      if (scrollWidth > parentWidth + 4) {
-        const diff = scrollWidth - parentWidth + 24;
+      if (scrollWidth > parentWidth + 2) {
+        const diff = Math.max(20, scrollWidth - parentWidth + 30);
         el.style.setProperty('--marquee-distance', `-${diff}px`);
         el.classList.add('marquee-active');
       }
@@ -1455,7 +1455,8 @@ export class UIManager {
     }
 
     try {
-      const res = await fetch(`/api/video-details?id=${encodeURIComponent(videoId)}`);
+      // Cloudflare Pages 및 Python 서버 양쪽 모두 100% 호환되도록 id와 videoId 둘 다 전송
+      const res = await fetch(`/api/video-details?id=${encodeURIComponent(videoId)}&videoId=${encodeURIComponent(videoId)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.likeCount && data.likeCount !== '좋아요') {
