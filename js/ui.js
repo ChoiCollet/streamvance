@@ -70,7 +70,8 @@ export class UIManager {
         home: document.getElementById('view-home'),
         explore: document.getElementById('view-explore'),
         library: document.getElementById('view-library'),
-        search: document.getElementById('view-search')
+        search: document.getElementById('view-search'),
+        artist: document.getElementById('view-artist')
       },
       // Bottom Player Bar (스크린샷 일치)
       playerBar: document.getElementById('player-bar'),
@@ -281,6 +282,15 @@ export class UIManager {
     const modalDislikeMobile = document.getElementById('btn-modal-dislike-mobile');
     if (modalDislikeMobile) {
       modalDislikeMobile.classList.toggle('disliked', isDisliked);
+    }
+
+    const btnPillLike = document.getElementById('btn-pill-like');
+    if (btnPillLike) {
+      btnPillLike.classList.toggle('active', isLiked);
+    }
+    const btnPillDislike = document.getElementById('btn-pill-dislike');
+    if (btnPillDislike) {
+      btnPillDislike.classList.toggle('active', isDisliked);
     }
 
     // 페이지 내 모든 트랙 카드의 인라인 좋아요 버튼 동기화
@@ -1164,11 +1174,11 @@ export class UIManager {
           <div class="section-container" style="margin-bottom: 28px;">
             <h2 class="section-title" style="font-size: 1.2rem; margin-bottom: 14px;">상위 검색결과</h2>
             <div class="artist-top-card" id="artist-top-card" data-artist="${artistInfo.name}">
-              <div class="artist-top-header">
+              <div class="artist-top-header" id="btn-search-artist-header" title="${artistInfo.name}의 모든 노래 보러가기">
                 <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
                 <div class="artist-top-info">
-                  <div class="artist-top-name">${artistInfo.name}</div>
-                  <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'}</div>
+                  <div class="artist-top-name" id="btn-search-artist-name-title">${artistInfo.name}</div>
+                  <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'} • 채널 보기</div>
                 </div>
               </div>
               <div class="artist-top-actions">
@@ -1184,6 +1194,10 @@ export class UIManager {
               <div class="artist-top-tracks">
                 ${topArtistTracks.map(t => this._createSearchTrackRow(t, false)).join('')}
               </div>
+              <button class="btn-view-all-artist-songs" id="btn-view-all-artist-songs" title="${artistInfo.name} 노래 전체보기">
+                <span>${artistInfo.name} 노래 전체보기</span>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
             </div>
           </div>
         `;
@@ -1230,6 +1244,25 @@ export class UIManager {
 
     this.dom.searchResultsList.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+
+    // 아티스트 이름 또는 카드 헤더 클릭 시 아티스트 상세 곡 목록 뷰로 이동 (사용자 요청 2번)
+    const artistTopCard = document.getElementById('artist-top-card');
+    if (artistTopCard && artistInfo) {
+      const allArtistSongs = (artistOfficialSongs && artistOfficialSongs.length > 0) ? artistOfficialSongs : (songs.length > 0 ? songs : tracks);
+      const onOpenArtist = (e) => {
+        // 셔플/스테이션/트랙 클릭 제외
+        if (e.target.closest('#btn-search-artist-shuffle') || e.target.closest('#btn-search-artist-station') || e.target.closest('.search-card-wide') || e.target.closest('.track-row-card')) {
+          return;
+        }
+        e.stopPropagation();
+        this.openArtistView(artistInfo, allArtistSongs);
+      };
+
+      const btnHeader = document.getElementById('btn-search-artist-header');
+      const btnViewAll = document.getElementById('btn-view-all-artist-songs');
+      if (btnHeader) btnHeader.addEventListener('click', onOpenArtist);
+      if (btnViewAll) btnViewAll.addEventListener('click', onOpenArtist);
+    }
   }
 
   // 11. 둘러보기 분위기/장르 상세 패널 렌더링
@@ -1276,6 +1309,16 @@ export class UIManager {
 
     this.updateLikeButtons(track.id);
 
+    // 텍스트 Marquee 오버플로우 감지 및 부드러운 가로 스크롤 적용 (사용자 요청 3번)
+    this.applyMarqueeIfOverflow(this.dom.titleText);
+    this.applyMarqueeIfOverflow(this.dom.modalTitle);
+    const sheetTitle = document.getElementById('sheet-track-title');
+    if (sheetTitle) this.applyMarqueeIfOverflow(sheetTitle);
+
+    // 유튜브 실시간 좋아요 수 및 댓글 수 갱신 (사용자 요청 6번)
+    const vid = track.videoId || (track.id && track.id.startsWith('yt-') ? track.id.replace('yt-', '') : null);
+    this.updateVideoDetails(vid);
+
     // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관 (가사 대용량 배열 제외하여 쿼터 안전 보장)
     const existingIndex = this.playHistory.findIndex(t => t.id === track.id || (t.videoId && t.videoId === track.videoId));
     if (existingIndex >= 0) {
@@ -1306,6 +1349,182 @@ export class UIManager {
         this.renderLibrary('history');
       }
     }
+  }
+
+  // 텍스트 길이 초과 시 매끄러운 Marquee 가로 흐름 애니메이션 적용
+  applyMarqueeIfOverflow(el) {
+    if (!el) return;
+    el.classList.remove('marquee-active');
+    el.style.removeProperty('--marquee-distance');
+    requestAnimationFrame(() => {
+      const parent = el.parentElement;
+      const parentWidth = parent ? parent.clientWidth : el.clientWidth;
+      const scrollWidth = el.scrollWidth;
+      if (scrollWidth > parentWidth + 4) {
+        const diff = scrollWidth - parentWidth + 24;
+        el.style.setProperty('--marquee-distance', `-${diff}px`);
+        el.classList.add('marquee-active');
+      }
+    });
+  }
+
+  // 아티스트 전용 상세 뷰 열기 (사용자 요청 2번)
+  openArtistView(artistInfo, initialTracks = []) {
+    if (!artistInfo || !artistInfo.name) return;
+
+    const heroAvatar = document.getElementById('artist-hero-avatar');
+    const heroName = document.getElementById('artist-hero-name');
+    const heroSubs = document.getElementById('artist-hero-subs');
+    const tracksList = document.getElementById('artist-full-tracks-list');
+    const countBadge = document.getElementById('artist-track-count-badge');
+
+    if (heroAvatar) heroAvatar.src = artistInfo.avatar || initialTracks[0]?.cover || '';
+    if (heroName) heroName.textContent = artistInfo.name;
+    if (heroSubs) heroSubs.textContent = artistInfo.subscribers || '아티스트';
+
+    this.currentArtist = artistInfo;
+    this.currentArtistTracks = [...initialTracks];
+
+    if (tracksList) {
+      tracksList.innerHTML = this.currentArtistTracks.map(t => this._createSearchTrackRow(t, false)).join('');
+    }
+    if (countBadge) countBadge.textContent = `${this.currentArtistTracks.length}곡`;
+
+    this.switchView('artist');
+
+    // 비동기 추가 곡 25~30곡 보강
+    if (this.onFetchMoreArtistSongs && typeof this.onFetchMoreArtistSongs === 'function') {
+      this.onFetchMoreArtistSongs(artistInfo.name, (moreTracks) => {
+        if (!moreTracks || moreTracks.length === 0) return;
+        moreTracks.forEach(t => {
+          if (!this.currentArtistTracks.find(item => item.id === t.id || (item.videoId && item.videoId === t.videoId))) {
+            this.currentArtistTracks.push(t);
+          }
+        });
+        if (tracksList) {
+          tracksList.innerHTML = this.currentArtistTracks.map(t => this._createSearchTrackRow(t, false)).join('');
+        }
+        if (countBadge) countBadge.textContent = `${this.currentArtistTracks.length}곡`;
+      });
+    }
+  }
+
+  // 유튜브 실시간 영상 메타 (좋아요 수, 댓글 수) 갱신
+  async updateVideoDetails(videoId) {
+    const likeCountEl = document.getElementById('pill-like-count');
+    const commentCountEl = document.getElementById('pill-comment-count');
+    const sheetCount = document.getElementById('comments-sheet-total-count');
+
+    if (!videoId) {
+      if (likeCountEl) likeCountEl.textContent = '좋아요';
+      if (commentCountEl) commentCountEl.textContent = '댓글';
+      if (sheetCount) sheetCount.textContent = '0';
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/video-details?id=${encodeURIComponent(videoId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (likeCountEl && data.likeCount) likeCountEl.textContent = data.likeCount;
+        if (commentCountEl && data.commentCount) commentCountEl.textContent = data.commentCount;
+        if (sheetCount && data.commentCount) sheetCount.textContent = data.commentCount;
+      }
+    } catch (e) {
+      console.warn("Video details load error:", e);
+    }
+  }
+
+  // 유튜브 실시간 댓글 바텀시트 열기
+  async openCommentsSheet(videoId, sort = 'top') {
+    const modal = document.getElementById('comments-sheet-modal');
+    if (!modal) return;
+    modal.classList.add('open');
+
+    this.currentCommentsVideoId = videoId;
+    this.currentCommentsSort = sort;
+
+    const btnTop = document.getElementById('btn-comments-sort-top');
+    const btnNew = document.getElementById('btn-comments-sort-new');
+    if (btnTop && btnNew) {
+      btnTop.classList.toggle('active', sort === 'top');
+      btnNew.classList.toggle('active', sort === 'new');
+    }
+
+    const loading = document.getElementById('comments-loading');
+    const list = document.getElementById('comments-items-list');
+    if (loading) loading.style.display = 'block';
+    if (list) list.innerHTML = '';
+
+    if (!videoId) {
+      if (loading) loading.style.display = 'none';
+      if (list) list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">유튜브 영상 트랙이 아닙니다.</p>';
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/comments?id=${encodeURIComponent(videoId)}&sort=${sort}`);
+      if (loading) loading.style.display = 'none';
+      if (res.ok) {
+        const data = await res.json();
+        this.renderCommentsList(data.comments || []);
+        if (data.commentCount) {
+          const sheetCount = document.getElementById('comments-sheet-total-count');
+          const pillCount = document.getElementById('pill-comment-count');
+          if (sheetCount) sheetCount.textContent = data.commentCount;
+          if (pillCount) pillCount.textContent = data.commentCount;
+        }
+      } else {
+        if (list) list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">댓글을 불러오지 못했습니다.</p>';
+      }
+    } catch (e) {
+      if (loading) loading.style.display = 'none';
+      if (list) list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">댓글을 불러오는 중 오류가 발생했습니다.</p>';
+    }
+  }
+
+  renderCommentsList(comments) {
+    const list = document.getElementById('comments-items-list');
+    if (!list) return;
+
+    if (!comments || comments.length === 0) {
+      list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">작성된 댓글이 없거나 로드할 수 없습니다.</p>';
+      return;
+    }
+
+    list.innerHTML = comments.map(c => `
+      <div class="comment-card-item">
+        <img src="${c.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80'}" alt="${c.author}" class="comment-card-avatar" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80';">
+        <div class="comment-card-main">
+          <div class="comment-card-header">
+            <span class="comment-card-author">${c.author || '@user'}</span>
+            <span class="comment-card-time">• ${c.publishedText || '최근'}</span>
+          </div>
+          <div class="comment-card-content">${this.escapeHTML(c.content || '')}</div>
+          <div class="comment-card-actions">
+            <div class="comment-like-wrap">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+              <span>${c.likeCount || '0'}</span>
+            </div>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="cursor: pointer;"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>
+            ${c.replyCount > 0 ? `<span class="comment-replies-link">답글 ${c.replyCount}개 모두 보기</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  escapeHTML(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>'"]/g, 
+      tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[tag] || tag)
+    );
   }
 
   // 재생 / 일시정지 상태 아이콘 변경 (삼각형 ▶ vs 젓가락 두 개 ⏸ 완벽 렌더링)

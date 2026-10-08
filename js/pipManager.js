@@ -11,36 +11,249 @@ export class PiPManager {
     this.pipWindow = null;
     this.isFloatingOpen = false;
 
+    this.isNativePiPActive = false;
+    this.pipCanvasTimer = null;
+    this.cachedCoverImg = null;
+    this.cachedCoverUrl = null;
+    this.currentLyricText = '';
+
     this.initInPageFloatingPip();
   }
 
-  // 브라우저 공식 Document Picture-in-Picture 지원 여부 확인
+  // 브라우저 공식 Document Picture-in-Picture 지원 여부 확인 (PC 크롬 116+)
   isDocPiPSupported() {
     return 'documentPictureInPicture' in window;
   }
 
+  // HTML5 Video Picture-in-Picture 지원 여부 확인 (모바일 안드로이드, 삼성인터넷, 크롬)
+  isVideoPiPSupported() {
+    return (typeof document !== 'undefined' && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled) ||
+           (typeof HTMLVideoElement !== 'undefined' && 'requestPictureInPicture' in HTMLVideoElement.prototype);
+  }
+
   // PiP 열기/닫기 토글
   async togglePiP() {
+    // 1. 이미 네이티브 Video PiP가 활성화되어 있다면 닫기
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+        this.ui.showToast('화면 속 화면 (PIP)이 종료되었습니다.');
+        return;
+      } catch (e) {}
+    }
+
     if (this.pipWindow) {
       this.pipWindow.close();
       this.pipWindow = null;
       return;
     }
 
+    // 2. 모바일 브라우저(삼성인터넷, 모바일 크롬 등) 환경에서는 실제 안드로이드 시스템 PIP를 띄우는 네이티브 Canvas Video PiP 우선 실행!
+    const isMobile = /Android|iPhone|iPad|iPod|SamsungBrowser/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    if (isMobile && this.isVideoPiPSupported()) {
+      try {
+        await this.openNativeVideoPiP();
+        return;
+      } catch (err) {
+        console.warn("Mobile native video PiP failed, trying fallback:", err);
+      }
+    }
+
+    // 3. 데스크톱 환경에서는 Document Picture-in-Picture 실행
     if (this.isDocPiPSupported()) {
       try {
         await this.openDocumentPiP();
         return;
       } catch (err) {
-        console.warn("Document PiP failed, falling back to in-page floating PiP:", err);
+        console.warn("Document PiP failed, falling back to Video/Floating PiP:", err);
       }
     }
 
-    // 폴백: 인페이지 플로팅 미니 플레이어 토글
+    // 4. Document PiP 미지원 시 네이티브 Video PiP 시도
+    if (this.isVideoPiPSupported()) {
+      try {
+        await this.openNativeVideoPiP();
+        return;
+      } catch (e) {}
+    }
+
+    // 5. 최후 폴백: 웹페이지 내부 인페이지 플로팅 미니 플레이어 토글
     this.toggleInPageFloating();
   }
 
-  // 1. 브라우저 창 밖으로 띄우는 공식 Document PiP 팝업
+  // 모바일 삼성인터넷/크롬용 네이티브 Video PiP (실제 안드로이드 OS 시스템 플로팅 창 생성)
+  async openNativeVideoPiP() {
+    const track = this.player.getCurrentTrack();
+    if (!track) {
+      this.ui.showToast('재생 중인 곡이 없습니다.');
+      return;
+    }
+
+    let video = document.getElementById('native-pip-video');
+    let canvas = document.getElementById('native-pip-canvas');
+    if (!video) {
+      video = document.createElement('video');
+      video.id = 'native-pip-video';
+      video.playsInline = true;
+      video.muted = true;
+      video.autoplay = true;
+      video.style.cssText = 'position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-999;';
+      document.body.appendChild(video);
+    }
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.id = 'native-pip-canvas';
+      canvas.width = 512;
+      canvas.height = 512;
+      canvas.style.display = 'none';
+      document.body.appendChild(canvas);
+    }
+
+    // 캔버스 초기 드로잉
+    this.renderPiPCanvas(canvas, track, this.currentLyricText);
+
+    // Canvas Video Stream 바인딩
+    if (!video.srcObject && canvas.captureStream) {
+      try {
+        video.srcObject = canvas.captureStream(15);
+      } catch (e) {
+        console.warn("captureStream error:", e);
+      }
+    }
+
+    try {
+      await video.play();
+    } catch (e) {}
+
+    try {
+      await video.requestPictureInPicture();
+      this.isNativePiPActive = true;
+      this.ui.showToast('삼성인터넷 시스템 PIP(화면 속 화면)이 실행되었습니다.');
+
+      video.addEventListener('leavepictureinpicture', () => {
+        this.isNativePiPActive = false;
+        this.stopPiPCanvasLoop();
+      }, { once: true });
+
+      this.startPiPCanvasLoop();
+    } catch (err) {
+      console.warn("requestPictureInPicture failed:", err);
+      this.toggleInPageFloating();
+    }
+  }
+
+  startPiPCanvasLoop() {
+    this.stopPiPCanvasLoop();
+    this.pipCanvasTimer = setInterval(() => {
+      if (!this.isNativePiPActive) {
+        this.stopPiPCanvasLoop();
+        return;
+      }
+      const canvas = document.getElementById('native-pip-canvas');
+      const track = this.player.getCurrentTrack();
+      if (canvas && track) {
+        this.renderPiPCanvas(canvas, track, this.currentLyricText);
+      }
+    }, 120);
+  }
+
+  stopPiPCanvasLoop() {
+    if (this.pipCanvasTimer) {
+      clearInterval(this.pipCanvasTimer);
+      this.pipCanvasTimer = null;
+    }
+  }
+
+  renderPiPCanvas(canvas, track, lyricText = '') {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // 배경: 짙은 다크 네이비 그라데이션
+    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+    bgGrad.addColorStop(0, '#0c0d14');
+    bgGrad.addColorStop(1, '#181926');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 앨범 커버 이미지 드로잉
+    if (track && track.cover) {
+      if (this.cachedCoverUrl !== track.cover) {
+        this.cachedCoverUrl = track.cover;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          this.cachedCoverImg = img;
+        };
+        img.src = track.cover;
+      }
+
+      if (this.cachedCoverImg && this.cachedCoverImg.complete) {
+        ctx.save();
+        const imgSize = 240;
+        const imgX = (w - imgSize) / 2;
+        const imgY = 40;
+        const r = 24;
+        ctx.beginPath();
+        ctx.moveTo(imgX + r, imgY);
+        ctx.arcTo(imgX + imgSize, imgY, imgX + imgSize, imgY + imgSize, r);
+        ctx.arcTo(imgX + imgSize, imgY + imgSize, imgX, imgY + imgSize, r);
+        ctx.arcTo(imgX, imgY + imgSize, imgX, imgY, r);
+        ctx.arcTo(imgX, imgY, imgX + imgSize, imgY, r);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(this.cachedCoverImg, imgX, imgY, imgSize, imgSize);
+        ctx.restore();
+      }
+    }
+
+    // 움직이는 이퀄라이저 비주얼라이저 바 (재생 중일 때 실시간 파동)
+    const isPlaying = this.player && this.player.isPlaying;
+    const now = Date.now() / 150;
+    const barCount = 18;
+    const barWidth = 6;
+    const barGap = 6;
+    const totalBarWidth = barCount * (barWidth + barGap);
+    const startX = (w - totalBarWidth) / 2;
+    const baseBarY = 320;
+
+    ctx.fillStyle = '#ff0055';
+    for (let i = 0; i < barCount; i++) {
+      const height = isPlaying ? Math.abs(Math.sin(now + i * 0.4)) * 26 + 6 : 4;
+      const x = startX + i * (barWidth + barGap);
+      const y = baseBarY - height / 2;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, barWidth, height, 3);
+      } else {
+        ctx.rect(x, y, barWidth, height);
+      }
+      ctx.fill();
+    }
+
+    // 곡 제목 텍스트
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    const title = track?.title || '재생 중인 곡 없음';
+    ctx.fillText(title.length > 22 ? title.slice(0, 20) + '...' : title, w / 2, 375);
+
+    // 아티스트 텍스트
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '500 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const artist = track?.artist || 'Streamvance';
+    ctx.fillText(artist.length > 26 ? artist.slice(0, 24) + '...' : artist, w / 2, 415);
+
+    // 실시간 싱크 가사
+    ctx.fillStyle = '#ff4d79';
+    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const lyric = lyricText || 'Streamvance Music';
+    ctx.fillText(lyric.length > 28 ? lyric.slice(0, 26) + '...' : lyric, w / 2, 470);
+  }
+
+  // 1. 브라우저 창 밖으로 띄우는 공식 Document PiP 팝업 (PC)
   async openDocumentPiP() {
     const track = this.player.getCurrentTrack();
     if (!track) {
@@ -383,7 +596,18 @@ export class PiPManager {
 
   // 실시간 재생시간 및 가사 PiP 화면에 동기화
   syncPiPProgress(currentTime, duration, percent, currentLyricText = '') {
-    // 1. Document PiP 진행률 & 가사
+    this.currentLyricText = currentLyricText;
+
+    // 1. Native Video Canvas PiP 업데이트
+    if (this.isNativePiPActive) {
+      const canvas = document.getElementById('native-pip-canvas');
+      const track = this.player.getCurrentTrack();
+      if (canvas && track) {
+        this.renderPiPCanvas(canvas, track, currentLyricText);
+      }
+    }
+
+    // 2. Document PiP 진행률 & 가사
     if (this.pipWindow && !this.pipWindow.closed) {
       const doc = this.pipWindow.document;
       const fill = doc.getElementById('pip-seek-fill');
@@ -400,7 +624,7 @@ export class PiPManager {
       }
     }
 
-    // 2. 인페이지 플로팅 진행률 & 가사
+    // 3. 인페이지 플로팅 진행률 & 가사
     if (this.isFloatingOpen) {
       const fLyrics = document.getElementById('floating-pip-lyrics');
       if (fLyrics && currentLyricText) {

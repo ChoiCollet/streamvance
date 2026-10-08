@@ -70,19 +70,53 @@ function isArtistOfficialChannel(artistName, channel) {
   return false;
 }
 
-function calcMusicScore(title, channel, durationSec, targetArtist = '') {
+function calcMusicScore(title, channel, durationSec, targetArtist = '', rawQuery = '') {
   let score = 0;
   const lt = (title || '').toLowerCase();
   const lc = (channel || '').toLowerCase();
+  const lq = (rawQuery || targetArtist || '').toLowerCase();
 
-  if (targetArtist && isArtistOfficialChannel(targetArtist, channel)) {
-    score += 25; // 아티스트 공식 채널 곡에 최고 가중치 부여
+  const isCoverQuery = /커버|cover|우타이테|가창/i.test(lq);
+  const isKaraokeQuery = /노래방|karaoke|tj|금영|ky|mr|반주|inst/i.test(lq);
+  const isLyricsQuery = /가사|lyrics|자막/i.test(lq);
+
+  const isOfficialCh = targetArtist && isArtistOfficialChannel(targetArtist, channel);
+  if (isOfficialCh) score += 35;
+  if (lc.includes('- topic')) score += 30; // YouTube Music 공식 음원 (원곡 최우선)
+  if (OFFICIAL_LABELS.some(lbl => lc.includes(lbl))) score += 20;
+
+  if (/official audio|official music video|official mv|m\/v|mv/i.test(lt)) score += 15;
+  else if (/audio|음원|original sound/i.test(lt)) score += 10;
+
+  if (durationSec >= 110 && durationSec <= 330) score += 5;
+
+  const isCoverItem = /cover|커버|covered by|가창/i.test(lt) || /cover|커버/i.test(lc);
+  if (isCoverQuery) {
+    if (isCoverItem) score += 35;
+  } else {
+    if (isCoverItem && !isOfficialCh) score -= 40;
   }
 
-  if (lc.includes('- topic')) score += 10;
-  if (OFFICIAL_LABELS.some(lbl => lc.includes(lbl))) score += 8;
-  if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip/i.test(lt)) score += 6;
-  if (durationSec >= 110 && durationSec <= 330) score += 3;
+  const isKaraokeItem = /노래방|karaoke|tj노래방|ky노래방|tj미디어|금영|mr제거|반주/i.test(lt) ||
+                        /노래방|karaoke|tj|금영|ky/i.test(lc) ||
+                        /\b(mr|inst|instrumental)\b/i.test(lt);
+  if (isKaraokeQuery) {
+    if (isKaraokeItem) score += 35;
+  } else {
+    if (isKaraokeItem) score -= 50;
+  }
+
+  const isLyricsItem = /가사|lyrics|자막|교차편집|han\/rom\/eng/i.test(lt);
+  if (isLyricsQuery) {
+    if (isLyricsItem) score += 25;
+  } else {
+    if (isLyricsItem && !(isOfficialCh || lc.includes('- topic') || OFFICIAL_LABELS.some(lbl => lc.includes(lbl)))) {
+      score -= 25;
+    }
+  }
+
+  if (/1시간|1hour|10분|연속듣기|반복재생/i.test(lt)) score -= 30;
+
   return score;
 }
 
@@ -158,7 +192,7 @@ async function scrapeYouTube(query) {
 
       if (durationSec >= 45) {
         const isOfficial = isArtistOfficialChannel(detectedArtist, channel);
-        const score = calcMusicScore(title, channel, durationSec, detectedArtist);
+        const score = calcMusicScore(title, channel, durationSec, detectedArtist, query);
 
         const trackObj = {
           id: `yt-${videoId}`,
@@ -278,7 +312,7 @@ async function searchYouTubeInnertube(query) {
           lyrics: [],
           isLiked: false,
           isCompilation,
-          _score: calcMusicScore(title, channel, durationSec, query)
+          _score: calcMusicScore(title, channel, durationSec, query, query)
         };
 
         if (isCompilation) {
@@ -352,7 +386,7 @@ async function fetchFromPublicMirrors(query) {
               cover: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
               lyrics: [],
               isLiked: false,
-              _score: calcMusicScore(item.title, channel, dur, query)
+              _score: calcMusicScore(item.title, channel, dur, query, query)
             };
           });
 

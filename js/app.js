@@ -2072,6 +2072,142 @@ function initApp() {
     });
   }
 
+  // 1) 아티스트 전용 뷰 연동 및 추가 곡 페칭 콜백 (사용자 요청 2번)
+  ui.onFetchMoreArtistSongs = async (artistName, callback) => {
+    try {
+      const res = await searchService.searchOnline(`${artistName} 노래`);
+      const songs = Array.isArray(res) ? res : (res.tracks || res.songs || []);
+      songs.forEach(t => {
+        if (!allTracks.find(item => item.id === t.id || (item.videoId && item.videoId === t.videoId))) {
+          allTracks.push(t);
+        }
+      });
+      callback(songs);
+    } catch (e) {
+      callback([]);
+    }
+  };
+
+  // 아티스트 뷰 뒤로가기 버튼
+  const btnArtistBack = document.getElementById('btn-artist-back');
+  if (btnArtistBack) {
+    btnArtistBack.addEventListener('click', () => {
+      ui.switchView('search');
+    });
+  }
+
+  // 아티스트 전체 재생 & 셔플
+  const btnArtistPlayAll = document.getElementById('btn-artist-play-all');
+  if (btnArtistPlayAll) {
+    btnArtistPlayAll.addEventListener('click', () => {
+      if (ui.currentArtistTracks && ui.currentArtistTracks.length > 0) {
+        player.setQueue(ui.currentArtistTracks, 0);
+        ui.showToast(`${ui.currentArtist?.name || '아티스트'} 모든 곡을 재생합니다.`);
+      }
+    });
+  }
+
+  const btnArtistShuffleAll = document.getElementById('btn-artist-shuffle-all');
+  if (btnArtistShuffleAll) {
+    btnArtistShuffleAll.addEventListener('click', () => {
+      if (ui.currentArtistTracks && ui.currentArtistTracks.length > 0) {
+        const shuffled = [...ui.currentArtistTracks].sort(() => Math.random() - 0.5);
+        player.setQueue(shuffled, 0);
+        ui.showToast(`${ui.currentArtist?.name || '아티스트'} 모든 곡을 셔플 재생합니다.`);
+      }
+    });
+  }
+
+  // 아티스트 곡 목록 카드 클릭
+  const artistFullTracksListEl = document.getElementById('artist-full-tracks-list');
+  if (artistFullTracksListEl) {
+    artistFullTracksListEl.addEventListener('click', (e) => {
+      const moreBtn = e.target.closest('.search-card-more-btn');
+      if (moreBtn) {
+        e.stopPropagation();
+        const trackId = moreBtn.getAttribute('data-track-id');
+        const track = allTracks.find(t => t.id === trackId) || ui.currentArtistTracks?.find(t => t.id === trackId);
+        if (track) openTrackMoreSheet(track);
+        return;
+      }
+      const card = e.target.closest('.search-card-wide') || e.target.closest('.track-row-card');
+      if (card) {
+        const trackId = card.getAttribute('data-track-id');
+        const track = allTracks.find(t => t.id === trackId) || ui.currentArtistTracks?.find(t => t.id === trackId);
+        if (track) playWithSmartQueue(track);
+      }
+    });
+  }
+
+  // 2) YouTube Music 액션 바 (좋아요, 싫어요, 댓글, 저장) 연동 (사용자 요청 6번 & 스크린샷 일치)
+  const btnPillLike = document.getElementById('btn-pill-like');
+  if (btnPillLike) {
+    btnPillLike.addEventListener('click', () => {
+      const cur = player.getCurrentTrack();
+      if (cur) {
+        ui.toggleLike(cur);
+      }
+    });
+  }
+
+  const btnPillDislike = document.getElementById('btn-pill-dislike');
+  if (btnPillDislike) {
+    btnPillDislike.addEventListener('click', () => {
+      const cur = player.getCurrentTrack();
+      if (cur) {
+        ui.toggleDislike(cur);
+      }
+    });
+  }
+
+  const btnPillComment = document.getElementById('btn-pill-comment');
+  if (btnPillComment) {
+    btnPillComment.addEventListener('click', () => {
+      const cur = player.getCurrentTrack();
+      if (cur) {
+        const vid = cur.videoId || (cur.id && cur.id.startsWith('yt-') ? cur.id.replace('yt-', '') : null);
+        ui.openCommentsSheet(vid, 'top');
+      }
+    });
+  }
+
+  const btnPillSave = document.getElementById('btn-pill-save');
+  if (btnPillSave) {
+    btnPillSave.addEventListener('click', () => {
+      const cur = player.getCurrentTrack();
+      if (cur) {
+        openTrackMoreSheet(cur);
+      }
+    });
+  }
+
+  // 3) 댓글 바텀시트 닫기 및 정렬 필터 연동
+  const btnCloseComments = document.getElementById('btn-close-comments');
+  const commentsBackdrop = document.getElementById('comments-sheet-backdrop');
+  const commentsModal = document.getElementById('comments-sheet-modal');
+  const closeCommentsSheet = () => {
+    if (commentsModal) commentsModal.classList.remove('open');
+  };
+  if (btnCloseComments) btnCloseComments.addEventListener('click', closeCommentsSheet);
+  if (commentsBackdrop) commentsBackdrop.addEventListener('click', closeCommentsSheet);
+
+  const btnCommentsTop = document.getElementById('btn-comments-sort-top');
+  const btnCommentsNew = document.getElementById('btn-comments-sort-new');
+  if (btnCommentsTop) {
+    btnCommentsTop.addEventListener('click', () => {
+      if (ui.currentCommentsVideoId) {
+        ui.openCommentsSheet(ui.currentCommentsVideoId, 'top');
+      }
+    });
+  }
+  if (btnCommentsNew) {
+    btnCommentsNew.addEventListener('click', () => {
+      if (ui.currentCommentsVideoId) {
+        ui.openCommentsSheet(ui.currentCommentsVideoId, 'new');
+      }
+    });
+  }
+
   if (ui.dom.searchInput) {
     ui.dom.searchInput.addEventListener('input', (e) => {
       const val = e.target.value.trim();

@@ -52,6 +52,29 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(results.get('tracks', []))
             return
 
+        # 유튜브 실시간 영상 메타(좋아요 수 등) API 엔드포인트: /api/video-details?id=...
+        if parsed.path == '/api/video-details':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('id', [''])[0].strip()
+            if not vid:
+                self.send_json({'error': 'No video ID', 'likeCount': '좋아요', 'rawLikeCount': 0})
+                return
+            details = self.fetch_video_details(vid)
+            self.send_json(details)
+            return
+
+        # 유튜브 실시간 댓글 API 엔드포인트: /api/comments?id=...&sort=top|new
+        if parsed.path == '/api/comments':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('id', [''])[0].strip()
+            sort = query_params.get('sort', ['top'])[0].strip()
+            if not vid:
+                self.send_json({'error': 'No video ID', 'commentCount': '0', 'comments': []})
+                return
+            comments_data = self.fetch_youtube_comments(vid, sort)
+            self.send_json(comments_data)
+            return
+
         # 일반 정적 파일 서빙
         return super().do_GET()
 
@@ -130,23 +153,196 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             return True
         return False
 
-    def music_score(self, title, channel, duration_sec, target_artist=''):
+    DETAILS_CACHE = {}
+    COMMENTS_CACHE = {}
+    INVIDIOUS_MIRRORS = [
+        'https://inv.nadeko.net',
+        'https://invidious.nerdvpn.de',
+        'https://iv.ggtyler.dev',
+        'https://invidious.projectsegfau.lt'
+    ]
+
+    @staticmethod
+    def format_count_ko(num):
+        try:
+            n = int(num)
+            if n >= 100000000:
+                return f"{n / 100000000:.1f}억".replace('.0억', '억')
+            elif n >= 10000:
+                return f"{n / 10000:.1f}만".replace('.0만', '만')
+            elif n >= 1000:
+                return f"{n / 1000:.1f}천".replace('.0천', '천')
+            return str(n)
+        except Exception:
+            return str(num)
+
+    def fetch_video_details(self, video_id):
+        if video_id in self.DETAILS_CACHE:
+            return self.DETAILS_CACHE[video_id]
+
+        like_str = None
+        like_raw = 0
+        comment_str = None
+        comment_raw = 0
+
+        # 1차: YouTube InnerTube Next API 호출 (실시간 좋아요 수 정확 파싱)
+        try:
+            payload = json.dumps({
+                'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'ko', 'gl': 'KR'}},
+                'videoId': video_id
+            }).encode('utf-8')
+            req = urllib.request.Request('https://www.youtube.com/youtubei/v1/next', data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=4) as r:
+                d = json.loads(r.read().decode('utf-8', errors='ignore'))
+                s = json.dumps(d, ensure_ascii=False)
+                
+                m = re.search(r'([0-9,]+)명과 함께 이 동영상에 좋아요', s)
+                if m:
+                    like_raw = int(m.group(1).replace(',', ''))
+                    like_str = self.format_count_ko(like_raw)
+
+                if not like_str:
+                    m_txt = re.search(r'"defaultText":\{"accessibility":\{"accessibilityData":\{"label":"[^"]*([0-9,]+)[^"]*좋아요', s)
+                    if m_txt:
+                        like_raw = int(m_txt.group(1).replace(',', ''))
+                        like_str = self.format_count_ko(like_raw)
+        except Exception:
+            pass
+
+        # 2차: Invidious 미러 폴백
+        if not like_str:
+            for inst in self.INVIDIOUS_MIRRORS:
+                try:
+                    url = f"{inst}/api/v1/videos/{video_id}"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=3) as r:
+                        vdata = json.loads(r.read().decode('utf-8', errors='ignore'))
+                        if 'likeCount' in vdata:
+                            like_raw = int(vdata['likeCount'])
+                            like_str = self.format_count_ko(like_raw)
+                            break
+                except Exception:
+                    pass
+
+        # 댓글 수 파싱 보조
+        c_info = self.fetch_youtube_comments(video_id, 'top')
+        if c_info and c_info.get('commentCount'):
+            comment_str = c_info['commentCount']
+            comment_raw = c_info.get('rawCommentCount', 0)
+
+        result = {
+            'videoId': video_id,
+            'likeCount': like_str or "좋아요",
+            'rawLikeCount': like_raw,
+            'commentCount': comment_str or "댓글",
+            'rawCommentCount': comment_raw
+        }
+        self.DETAILS_CACHE[video_id] = result
+        return result
+
+    def fetch_youtube_comments(self, video_id, sort='top'):
+        cache_key = f"{video_id}_{sort}"
+        if cache_key in self.COMMENTS_CACHE:
+            return self.COMMENTS_CACHE[cache_key]
+
+        sort_param = 'top' if sort == 'top' else 'new'
+        for inst in self.INVIDIOUS_MIRRORS:
+            try:
+                url = f"{inst}/api/v1/comments/{video_id}?sort_by={sort_param}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    raw_comments = data.get('comments', [])
+                    formatted_comments = []
+                    for c in raw_comments[:50]:
+                        thumbs = c.get('authorThumbnails', [])
+                        avatar = thumbs[-1].get('url') if thumbs else ''
+                        if avatar.startswith('//'):
+                            avatar = 'https:' + avatar
+                        formatted_comments.append({
+                            'author': c.get('author', ''),
+                            'authorId': c.get('authorId', ''),
+                            'avatar': avatar,
+                            'publishedText': c.get('publishedText', ''),
+                            'content': c.get('content', ''),
+                            'likeCount': self.format_count_ko(c.get('likeCount', 0)),
+                            'rawLikeCount': c.get('likeCount', 0),
+                            'replyCount': c.get('replyCount', 0)
+                        })
+                    res = {
+                        'commentCount': self.format_count_ko(data.get('commentCount', len(formatted_comments))),
+                        'rawCommentCount': data.get('commentCount', len(formatted_comments)),
+                        'comments': formatted_comments
+                    }
+                    self.COMMENTS_CACHE[cache_key] = res
+                    return res
+            except Exception:
+                continue
+
+        return {'commentCount': '0', 'rawCommentCount': 0, 'comments': []}
+
+    def music_score(self, title, channel, duration_sec, target_artist='', raw_query=''):
         score = 0
         lt = title.lower()
         lc = channel.lower()
-        if target_artist and self.is_artist_official_channel(target_artist, channel):
-            score += 25
-        # 공식 음원 채널 (Topic은 유튜브 뮤직 공식 아트 트랙)
+        lq = (raw_query or target_artist or '').lower()
+
+        # 사용자 검색 의도 판별
+        is_cover_query = any(k in lq for k in ['커버', 'cover', '우타이테', '가창'])
+        is_karaoke_query = any(k in lq for k in ['노래방', 'karaoke', 'tj', '금영', 'ky', 'mr', '반주', 'inst'])
+        is_lyrics_query = any(k in lq for k in ['가사', 'lyrics', '자막'])
+
+        # 1. 공식 음원 및 아티스트 공식 채널 우대
+        is_official_ch = target_artist and self.is_artist_official_channel(target_artist, channel)
+        if is_official_ch:
+            score += 35
+        # 공식 음원 채널 (Topic은 유튜브 뮤직 공식 아트 트랙 - 원곡 최우선 배치)
         if '- topic' in lc:
-            score += 10
+            score += 30
         if any(lbl in lc for lbl in self.OFFICIAL_LABELS):
-            score += 8
-        # 음악 메타데이터 키워드 (커버 및 라이브 포함)
-        if any(m in lt for m in ['m/v', 'mv', 'official mv', 'official audio', '음원', '가사', 'lyrics', '노래', 'live clip']):
-            score += 6
+            score += 20
+        # 음악 메타데이터 키워드 (공식 음원/MV)
+        if any(m in lt for m in ['official audio', 'official music video', 'official mv', 'm/v', 'mv']):
+            score += 15
+        elif any(m in lt for m in ['audio', '음원', 'original sound']):
+            score += 10
         # 일반적인 노래 재생시간 (2분~5분)
         if 110 <= duration_sec <= 330:
-            score += 3
+            score += 5
+
+        # 2. 커버곡 우선순위: 사용자가 커버를 검색한 경우 커버곡 우대, 일반 노래 검색 시 원곡 아래로 배치
+        is_cover_item = any(k in lt for k in ['cover', '커버', 'covered by', '가창']) or any(k in lc for k in ['cover', '커버'])
+        if is_cover_query:
+            if is_cover_item:
+                score += 35
+        else:
+            if is_cover_item and not is_official_ch:
+                score -= 40 # 일반 검색 시 타인 커버곡 대폭 감점
+
+        # 3. 노래방 / MR / 반주 처리: 일반 노래 검색 시 강력 감점
+        is_karaoke_item = any(k in lt for k in ['노래방', 'karaoke', 'tj노래방', 'ky노래방', 'tj미디어', '금영', 'mr제거', '반주']) or \
+                          any(k in lc for k in ['노래방', 'karaoke', 'tj', '금영', 'ky']) or \
+                          bool(re.search(r'\b(mr|inst|instrumental)\b', lt))
+        if is_karaoke_query:
+            if is_karaoke_item:
+                score += 35
+        else:
+            if is_karaoke_item:
+                score -= 50 # 원곡 검색 시 노래방/MR 최하단으로 밀어냄
+
+        # 4. 일반 유튜버/팬 가사 편집본 영상 감점
+        is_lyrics_item = any(k in lt for k in ['가사', 'lyrics', '자막', '교차편집', 'han/rom/eng'])
+        if is_lyrics_query:
+            if is_lyrics_item:
+                score += 25
+        else:
+            if is_lyrics_item and not (is_official_ch or '- topic' in lc or any(lbl in lc for lbl in self.OFFICIAL_LABELS)):
+                score -= 25
+
+        # 5. 1시간 연속재생, 플레이리스트 감점
+        if any(k in lt for k in ['1시간', '1hour', '10분', '연속듣기', '반복재생']):
+            score -= 30
+
         return score
 
     def search_youtube_innertube(self, query):
@@ -216,7 +412,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                     cover = thumbnails[-1]['url'] if thumbnails else f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
                     is_compilation = (duration_sec > 600) or any(w in title.lower() for w in ['playlist', '플레이리스트', '노래 모음', '전곡 모음'])
                     is_official = self.is_artist_official_channel(channel, query)
-                    score = self.music_score(title, channel, duration_sec, query)
+                    score = self.music_score(title, channel, duration_sec, query, query)
 
                     track_obj = {
                         'id': f"yt-{video_id}",
@@ -499,7 +695,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                         # Shorts 제외 (45초 이상)
                         if duration_sec >= 45:
                             is_official = self.is_artist_official_channel(query, channel)
-                            score = self.music_score(title, channel, duration_sec, query)
+                            score = self.music_score(title, channel, duration_sec, query, query)
                             track_obj = {
                                 'id': f"yt-{video_id}",
                                 'videoId': video_id,

@@ -157,7 +157,7 @@ export class YouTubeSearchService {
                 lyrics: [],
                 isLiked: false,
                 isCompilation: isComp,
-                _score: this.calcScore(item.title, item.author, dur, rawQuery)
+                _score: this.calcScore(item.title, item.author, dur, rawQuery, rawQuery)
               };
             });
           filtered.sort((a, b) => b._score - a._score);
@@ -219,17 +219,53 @@ export class YouTubeSearchService {
     return false;
   }
 
-  calcScore(title, channel, durationSec, targetArtist = '') {
+  calcScore(title, channel, durationSec, targetArtist = '', rawQuery = '') {
     let score = 0;
     const lt = (title || '').toLowerCase();
     const lc = (channel || '').toLowerCase();
-    if (targetArtist && this.isArtistOfficialChannel(targetArtist, channel)) {
-      score += 25;
+    const lq = (rawQuery || targetArtist || '').toLowerCase();
+
+    const isCoverQuery = /커버|cover|우타이테|가창/i.test(lq);
+    const isKaraokeQuery = /노래방|karaoke|tj|금영|ky|mr|반주|inst/i.test(lq);
+    const isLyricsQuery = /가사|lyrics|자막/i.test(lq);
+
+    const isOfficialCh = targetArtist && this.isArtistOfficialChannel(targetArtist, channel);
+    if (isOfficialCh) score += 35;
+    if (lc.includes('- topic')) score += 30; // YouTube Music 공식 음원 (원곡 최우선)
+    if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo/i.test(lc)) score += 20;
+
+    if (/official audio|official music video|official mv|m\/v|mv/i.test(lt)) score += 15;
+    else if (/audio|음원|original sound/i.test(lt)) score += 10;
+
+    if (durationSec >= 110 && durationSec <= 330) score += 5;
+
+    const isCoverItem = /cover|커버|covered by|가창/i.test(lt) || /cover|커버/i.test(lc);
+    if (isCoverQuery) {
+      if (isCoverItem) score += 35;
+    } else {
+      if (isCoverItem && !isOfficialCh) score -= 40;
     }
-    if (lc.includes('- topic')) score += 10;
-    if (/official|record|entertainment|music|음악|1thek|stone music|smtown|jyp|hybe|bighit|yg|dingo/i.test(lc)) score += 8;
-    if (/m\/v|mv|official mv|official audio|음원|가사|lyrics|노래|live clip/i.test(lt)) score += 6;
-    if (durationSec >= 110 && durationSec <= 330) score += 3;
+
+    const isKaraokeItem = /노래방|karaoke|tj노래방|ky노래방|tj미디어|금영|mr제거|반주/i.test(lt) ||
+                          /노래방|karaoke|tj|금영|ky/i.test(lc) ||
+                          /\b(mr|inst|instrumental)\b/i.test(lt);
+    if (isKaraokeQuery) {
+      if (isKaraokeItem) score += 35;
+    } else {
+      if (isKaraokeItem) score -= 50;
+    }
+
+    const isLyricsItem = /가사|lyrics|자막|교차편집|han\/rom\/eng/i.test(lt);
+    if (isLyricsQuery) {
+      if (isLyricsItem) score += 25;
+    } else {
+      if (isLyricsItem && !(isOfficialCh || lc.includes('- topic') || /1thek|stone music|smtown|jyp|hybe|yg/i.test(lc))) {
+        score -= 25;
+      }
+    }
+
+    if (/1시간|1hour|10분|연속듣기|반복재생/i.test(lt)) score -= 30;
+
     return score;
   }
 
