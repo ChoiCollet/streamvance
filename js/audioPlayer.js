@@ -311,7 +311,7 @@ export class AudioPlayer {
     const unlock = () => {
       if (this.bgKeepAliveAudio) {
         this.bgKeepAliveAudio.play().then(() => {
-          if (!this.isPlaying) {
+          if (!this.isPlaying || this.isUserPaused) {
             this.bgKeepAliveAudio.pause();
           }
         }).catch(() => {});
@@ -319,12 +319,10 @@ export class AudioPlayer {
       if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
         this.webAudioCtx.resume().catch(() => {});
       }
-      if (this.audio) {
-        this.audio.play().then(() => {
-          if (!this.isPlaying || !this.isCurrentLocal()) {
-            this.audio.pause();
-          }
-        }).catch(() => {});
+      if (this.audio && this.isCurrentLocal()) {
+        if (this.isPlaying && !this.isUserPaused) {
+          this.audio.play().catch(() => {});
+        }
       }
     };
 
@@ -350,18 +348,25 @@ export class AudioPlayer {
     }
   }
 
-  // 모바일 OS 사운드 포커스 & 백그라운드 WakeLock 앵커 가동
+  // 모바일 OS 사운드 포커스 & 백그라운드 무동결 앵커 가동 (삼성인터넷 & 크롬 모바일 백그라운드 재생의 핵심 심장)
   ensureSilentAnchorRunning() {
     if (!this.isPlaying || this.isUserPaused) return;
 
-    // 1. Web Audio API 엔진 언락 및 가동 (유튜브 오디오 포커스를 방해하지 않고 오디오 서브시스템 활성 유지)
+    // 1. 하드웨어 OS 레벨 무음 HTML5 Audio 앵커 가동 (Android AudioTrack 유지 -> 브라우저 탭 동결 절대 방어)
+    if (this.bgKeepAliveAudio) {
+      if (this.bgKeepAliveAudio.paused) {
+        this.bgKeepAliveAudio.play().catch(() => {});
+      }
+    }
+
+    // 2. Web Audio API 엔진 언락 및 가동 (유튜브 오디오 포커스를 방해하지 않고 오디오 서브시스템 활성 유지)
     try {
       if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
         this.webAudioCtx.resume().catch(() => {});
       }
     } catch (e) {}
 
-    // 2. 화면 WakeLock 획득
+    // 3. 화면 WakeLock 획득
     try {
       if ('wakeLock' in navigator && !this._wakeLock) {
         navigator.wakeLock.request('screen').then(lock => {
@@ -392,7 +397,7 @@ export class AudioPlayer {
     }
   }
 
-  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개
+  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개 (0ms, 50ms, 150ms, 400ms, 1000ms)
   forceResumePlayback() {
     if (this.isUserPaused || !this.isPlaying) return;
     if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
@@ -409,8 +414,8 @@ export class AudioPlayer {
       }
     } catch (e) {}
 
-    // 3. 백그라운드 전환 지연 대비 다단계 연속 안전 재개 (80ms, 250ms, 600ms)
-    [80, 250, 600].forEach(delay => {
+    // 3. 백그라운드 전환 지연 대비 다단계 연속 안전 재개
+    [30, 100, 250, 600, 1200].forEach(delay => {
       setTimeout(() => {
         if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
           const s = this.ytPlayer.getPlayerState();
@@ -437,6 +442,9 @@ export class AudioPlayer {
   }
 
   stopBgKeepAlive() {
+    if (this.bgKeepAliveAudio && !this.bgKeepAliveAudio.paused) {
+      this.bgKeepAliveAudio.pause();
+    }
     if (!this.isCurrentLocal() && this.audio) {
       this.audio.pause();
     }

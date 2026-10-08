@@ -2129,20 +2129,23 @@ a {
   transform: scale(1.08);
 }
 
-/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 백그라운드 재생 100% 보장 엔진) */
+/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 백그라운드 재생 100% 보장 엔진)
+   노래 모드: 화면 좌측 상단 1px 무음/무간섭 배치로 하단 [홈] 버튼이나 어떤 모바일 UI도 절대 가리지 않음! */
 .yt-player-persistent-wrap {
   position: fixed !important;
-  bottom: 10px !important;
-  left: 16px !important;
-  width: 52px !important;
-  height: 52px !important;
-  z-index: 499 !important; /* 하단 플레이어 바 앨범아트 뒷단에 위치하여 눈에 띄지 않으면서 브라우저에는 뷰포트 내 활성 비디오로 인식됨 */
-  opacity: 0.98 !important; /* 불투명도 98%로 유지하여 삼성인터넷/크롬의 비가시 비디오 백그라운드 재생 차단 휴리스틱 완전 무력화 */
+  top: 0 !important;
+  left: 0 !important;
+  bottom: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  z-index: -9999 !important;
+  opacity: 0.001 !important;
   pointer-events: none !important;
-  border-radius: 8px !important;
   overflow: hidden !important;
-  background: #000 !important;
-  transition: all 0.25s ease !important;
+  background: transparent !important;
+  border: none !important;
+  clip-path: inset(50%) !important;
+  transition: none !important;
 }
 
 .yt-player-persistent-wrap iframe,
@@ -2911,6 +2914,28 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
   .modal-header {
     height: 52px;
     padding: 0 14px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-header .ytm-media-toggle-pill {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+
+  .modal-header #btn-modal-sleep-mode {
+    display: none !important; /* 모바일에서는 잡다한 달 모양 버튼 숨김 처리하여 쾌적한 헤더 구현 */
+  }
+
+  .modal-header-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
   }
 
   .modal-body {
