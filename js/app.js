@@ -932,7 +932,6 @@ function initApp() {
         const albumTracks = allTracks.filter(t => album.trackIds.includes(t.id));
         if (albumTracks.length > 0) {
           player.setQueue(albumTracks, 0, true);
-          ui.showToast(`앨범 '${album.title}' 재생 시작`);
         }
       }
       return;
@@ -943,7 +942,6 @@ function initApp() {
       const track = allTracks[0];
       if (track) {
         player.setQueue([track, ...allTracks.slice(1)], 0, true);
-        ui.showToast(`'${track.title}' 재생 시작`);
       }
     }
 
@@ -3024,17 +3022,7 @@ function initApp() {
     });
   }
 
-  // 모바일 삼성인터넷 환경 감지 시 첫 곡 재생 시 안심 토스트 알림
-  const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent);
-  let hasShownSamsungTip = false;
-  const prevOnPlayState = player.callbacks.onPlayStateChange;
-  player.callbacks.onPlayStateChange = (isPlaying) => {
-    if (typeof prevOnPlayState === 'function') prevOnPlayState(isPlaying);
-    if (isPlaying && isSamsungBrowser && !hasShownSamsungTip) {
-      hasShownSamsungTip = true;
-      ui.showToast('🎵 삼성인터넷 무중단 백그라운드 재생 엔진이 활성화되었습니다.');
-    }
-  };
+
 
   // Lucide Icons 초기 렌더링
   if (window.lucide) {

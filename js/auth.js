@@ -541,7 +541,6 @@ export class AuthManager {
 
     if (smartMix.length > 0) {
       this.player.setQueue(smartMix, 0, true);
-      this.ui.showToast(`'${this.currentUser?.name || '나'}의 맞춤 취향 믹스' 재생 시작!`);
     }
   }
 }

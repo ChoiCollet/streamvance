@@ -33,51 +33,50 @@ export class PiPManager {
 
   // PiP 열기/닫기 토글
   async togglePiP() {
-    // 1. 이미 네이티브 Video PiP가 활성화되어 있다면 닫기
-    if (document.pictureInPictureElement) {
-      try {
-        await document.exitPictureInPicture();
-        this.ui.showToast('화면 속 화면 (PIP)이 종료되었습니다.');
-        return;
-      } catch (e) {}
+    // 1. 이미 인페이지 플로팅 미니 플레이어가 열려있다면 닫기
+    if (this.isFloatingOpen) {
+      this.toggleInPageFloating();
+      return;
     }
 
+    // 2. 이미 데스크톱 Document PiP가 열려있다면 닫기
     if (this.pipWindow) {
       this.pipWindow.close();
       this.pipWindow = null;
       return;
     }
 
-    // 2. 모바일 브라우저(삼성인터넷, 모바일 크롬 등) 환경에서는 실제 안드로이드 시스템 PIP를 띄우는 네이티브 Canvas Video PiP 우선 실행!
-    const isMobile = /Android|iPhone|iPad|iPod|SamsungBrowser/i.test(navigator.userAgent) || window.innerWidth <= 768;
-    if (isMobile && this.isVideoPiPSupported()) {
+    // 3. 이미 네이티브 Video PiP가 활성화되어 있다면 닫기
+    if (document.pictureInPictureElement) {
       try {
-        await this.openNativeVideoPiP();
+        await document.exitPictureInPicture();
         return;
-      } catch (err) {
-        console.warn("Mobile native video PiP failed, trying fallback:", err);
-      }
+      } catch (e) {}
     }
 
-    // 3. 데스크톱 환경에서는 Document Picture-in-Picture 실행
+    // 사운드 음소거 방지 및 볼륨 보장
+    if (this.player && typeof this.player.ensureAudioSound === 'function') {
+      this.player.ensureAudioSound();
+    }
+
+    // 4. 모바일 환경(삼성인터넷 등)에서는 오디오 포커스를 가로채지 않아 사운드가 100% 유지되는 플로팅 미니 플레이어 즉시 실행
+    const isMobile = /Android|iPhone|iPad|iPod|SamsungBrowser/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    if (isMobile) {
+      this.toggleInPageFloating();
+      return;
+    }
+
+    // 5. 데스크톱 환경에서는 Document Picture-in-Picture 실행
     if (this.isDocPiPSupported()) {
       try {
         await this.openDocumentPiP();
         return;
       } catch (err) {
-        console.warn("Document PiP failed, falling back to Video/Floating PiP:", err);
+        console.warn("Document PiP failed, falling back to floating PiP:", err);
       }
     }
 
-    // 4. Document PiP 미지원 시 네이티브 Video PiP 시도
-    if (this.isVideoPiPSupported()) {
-      try {
-        await this.openNativeVideoPiP();
-        return;
-      } catch (e) {}
-    }
-
-    // 5. 최후 폴백: 웹페이지 내부 인페이지 플로팅 미니 플레이어 토글
+    // 6. 폴백: 인페이지 플로팅 미니 플레이어 토글
     this.toggleInPageFloating();
   }
 
@@ -128,7 +127,6 @@ export class PiPManager {
     try {
       await video.requestPictureInPicture();
       this.isNativePiPActive = true;
-      this.ui.showToast('삼성인터넷 시스템 PIP(화면 속 화면)이 실행되었습니다.');
 
       video.addEventListener('leavepictureinpicture', () => {
         this.isNativePiPActive = false;
@@ -469,11 +467,9 @@ export class PiPManager {
 
     this.pipWindow.addEventListener('pagehide', () => {
       this.pipWindow = null;
-      this.ui.showToast('미니 플레이어 (PIP) 창이 닫혔습니다.');
     });
 
     this.updatePiPContent();
-    this.ui.showToast('화면 속 화면 (PIP 미니 플레이어)이 실행되었습니다.');
   }
 
   // 2. 인페이지 플로팅 미니 플레이어 (Document PiP 미지원 브라우저/모바일용)
@@ -542,7 +538,9 @@ export class PiPManager {
     wrap.style.display = this.isFloatingOpen ? 'flex' : 'none';
     if (this.isFloatingOpen) {
       this.updatePiPContent();
-      this.ui.showToast('플로팅 미니 플레이어로 전환되었습니다.');
+      if (this.player && typeof this.player.ensureAudioSound === 'function') {
+        this.player.ensureAudioSound();
+      }
     }
   }
 

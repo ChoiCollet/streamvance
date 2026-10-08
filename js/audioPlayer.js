@@ -59,7 +59,7 @@ export class AudioPlayer {
           events: {
             onReady: (event) => {
               this.isYTReady = true;
-              this.ytPlayer.setVolume(this.volume * 100);
+              this.ensureAudioSound();
               console.log("YouTube Player is ready!");
             },
             onStateChange: (event) => {
@@ -67,6 +67,7 @@ export class AudioPlayer {
               if (event.data === 1) {
                 this.isPlaying = true;
                 this.isUserPaused = false;
+                this.ensureAudioSound();
                 this.startProgressSync();
                 this.startBgKeepAlive();
                 this.syncMediaSessionPlaybackState();
@@ -329,6 +330,22 @@ export class AudioPlayer {
     });
   }
 
+  // 유튜브 플레이어 볼륨 및 음소거 해제 강제 보장 (모바일/PIP 무음 방어)
+  ensureAudioSound() {
+    if (this.ytPlayer) {
+      try {
+        if (!this.isMuted) {
+          if (typeof this.ytPlayer.unMute === 'function') {
+            this.ytPlayer.unMute();
+          }
+          if (typeof this.ytPlayer.setVolume === 'function') {
+            this.ytPlayer.setVolume(this.volume * 100);
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
   // 백그라운드 상태에서 유튜브 플레이어 상태 지속 감시 및 재생 유지
   keepPlaybackAlive() {
     if (!this.isPlaying || this.isUserPaused) return;
@@ -340,6 +357,7 @@ export class AudioPlayer {
         if (state !== 1 && state !== 3) {
           this.ytPlayer.playVideo();
         }
+        this.ensureAudioSound();
       } catch (e) {}
     }
   }
@@ -349,7 +367,10 @@ export class AudioPlayer {
     if (this.isUserPaused) return;
 
     if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-      try { this.ytPlayer.playVideo(); } catch (e) {}
+      try {
+        this.ytPlayer.playVideo();
+        this.ensureAudioSound();
+      } catch (e) {}
     }
 
     [15, 60, 180, 450, 1000].forEach(delay => {
@@ -359,6 +380,7 @@ export class AudioPlayer {
           if (state !== 1 && state !== 3) {
             try { this.ytPlayer.playVideo(); } catch (e) {}
           }
+          this.ensureAudioSound();
         }
       }, delay);
     });
@@ -620,6 +642,7 @@ export class AudioPlayer {
           this.ytPlayer.playVideo();
         }
       } catch (e) {}
+      this.ensureAudioSound();
       this.startBgKeepAlive();
     } else if (this.audio) {
       this.isPlaying = true;
