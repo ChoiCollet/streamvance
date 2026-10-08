@@ -1209,12 +1209,14 @@ function initApp() {
       btnVideo?.classList.add('active');
       albumArtWrap?.classList.add('hidden');
       videoWrap?.classList.add('active');
+      document.body.classList.add('video-mode-active');
       if (btnModalTheater) btnModalTheater.style.display = 'inline-flex';
     } else {
       btnSong?.classList.add('active');
       btnVideo?.classList.remove('active');
       albumArtWrap?.classList.remove('hidden');
       videoWrap?.classList.remove('active');
+      document.body.classList.remove('video-mode-active');
       if (btnModalTheater) btnModalTheater.style.display = 'none';
       syncTheaterUI(false);
     }
@@ -1259,6 +1261,7 @@ function initApp() {
   function closeModal(fromPopState = false) {
     ui.dom.fullModal.classList.remove('open');
     document.body.classList.remove('player-modal-open');
+    document.body.classList.remove('video-mode-active');
 
     if (!fromPopState && window.location.hash === '#player') {
       try {

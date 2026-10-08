@@ -22,10 +22,37 @@
   <!-- Google Identity Services (GIS) for Google Login -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+  <!-- Page Visibility API Spoofing & Mobile Background Guard -->
+  <script>
+    (function() {
+      try {
+        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+        Object.defineProperty(document, 'webkitHidden', { get: () => false, configurable: true });
+        Object.defineProperty(document, 'webkitVisibilityState', { get: () => 'visible', configurable: true });
+      } catch (e) {}
+
+      const stopVis = function(e) {
+        if (e.type === 'visibilitychange' || e.type === 'webkitvisibilitychange') {
+          e.stopImmediatePropagation();
+        }
+      };
+      window.addEventListener('visibilitychange', stopVis, true);
+      document.addEventListener('visibilitychange', stopVis, true);
+      window.addEventListener('webkitvisibilitychange', stopVis, true);
+      document.addEventListener('webkitvisibilitychange', stopVis, true);
+    })();
+  </script>
+
   <!-- Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <!-- 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 100% 보장) -->
+  <div id="yt-player-persistent-wrap" class="yt-player-persistent-wrap">
+    <div id="youtube-player-hidden"></div>
+  </div>
+
   <div id="app" class="app-container">
     
     <!-- 상단 Streamvance 헤더 (YouTube Music PC 표준 레이아웃: 좌측 로고, 중앙 정렬 [← → 홈 둘러보기 보관함 검색창], 우측 프로필) -->
@@ -733,7 +760,6 @@
 
             <!-- Video 모드: 광고 없이 실시간 가사와 완벽 동기화되는 유튜브 플레이어 -->
             <div class="modal-video-wrap" id="modal-video-wrap">
-              <div id="youtube-player-hidden"></div>
               <!-- 동영상 화면 제어 툴바: 대형 영상 모드, 전체화면 버튼 (사용자 요청) -->
               <div class="video-corner-actions" id="video-corner-actions">
                 <button class="art-corner-btn btn-video-theater" id="btn-video-theater" title="대형 영상 모드 (화면 확대 / 시어터 뷰)">

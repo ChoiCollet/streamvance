@@ -297,7 +297,6 @@ export class AudioPlayer {
 
       document.addEventListener('visibilitychange', handleBackgroundTransition, true);
       window.addEventListener('pagehide', handleBackgroundTransition, true);
-      window.addEventListener('blur', handleBackgroundTransition, true);
       window.addEventListener('focus', () => {
         if (this.isPlaying && !this.isUserPaused) {
           this.syncMediaSessionPlaybackState();
@@ -393,38 +392,37 @@ export class AudioPlayer {
     }
   }
 
-  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개 (무한 재귀 폭풍 방지)
+  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개
   forceResumePlayback() {
     if (this.isUserPaused || !this.isPlaying) return;
-
-    const now = Date.now();
-    if (this._lastResumeAttempt && (now - this._lastResumeAttempt) < 1000) {
-      return; // 1초 쿨다운 적용으로 무한 루프 폭풍 원천 차단
-    }
-    this._lastResumeAttempt = now;
+    if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
 
     // 1. 최상위 OS 오디오 앵커 확실히 재가동
     this.ensureSilentAnchorRunning();
 
-    // 2. YouTube 플레이어 1회 정밀 재생 재개
-    if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-      try {
+    // 2. YouTube 플레이어가 현재 재생 중(1)이 아니면 즉시 재생 명령 실행
+    try {
+      const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
+      if (state !== 1) {
         this.ytPlayer.playVideo();
         this.ensureAudioSound();
-      } catch (e) {}
-    }
-
-    setTimeout(() => {
-      if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
-        const state = this.ytPlayer.getPlayerState();
-        if (state !== 1 && state !== 3) {
-          try {
-            this.ytPlayer.playVideo();
-            this.ensureAudioSound();
-          } catch (e) {}
-        }
       }
-    }, 250);
+    } catch (e) {}
+
+    // 3. 백그라운드 전환 지연 대비 다단계 연속 안전 재개 (80ms, 250ms, 600ms)
+    [80, 250, 600].forEach(delay => {
+      setTimeout(() => {
+        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+          const s = this.ytPlayer.getPlayerState();
+          if (s !== 1 && s !== 3) {
+            try {
+              this.ytPlayer.playVideo();
+              this.ensureAudioSound();
+            } catch (e) {}
+          }
+        }
+      }, delay);
+    });
   }
 
   startBgKeepAlive() {

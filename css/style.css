@@ -2129,39 +2129,69 @@ a {
   transform: scale(1.08);
 }
 
-/* Video 모드: 무광고 유튜브 영상 플레이어 */
-/* 모바일 브라우저(삼성인터넷, 크롬) 백그라운드 재생 방어: 240px x 240px 크기로 앨범아트 뒷단에 상주 (브라우저 비디오 스로틀링 완전 방어) */
-.modal-video-wrap:not(.active) {
-  position: absolute !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 240px !important;
-  height: 240px !important;
-  opacity: 0.01 !important;
+/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 백그라운드 재생 100% 보장 엔진) */
+.yt-player-persistent-wrap {
+  position: fixed !important;
+  bottom: 10px !important;
+  left: 16px !important;
+  width: 52px !important;
+  height: 52px !important;
+  z-index: 499 !important; /* 하단 플레이어 바 앨범아트 뒷단에 위치하여 눈에 띄지 않으면서 브라우저에는 뷰포트 내 활성 비디오로 인식됨 */
+  opacity: 0.98 !important; /* 불투명도 98%로 유지하여 삼성인터넷/크롬의 비가시 비디오 백그라운드 재생 차단 휴리스틱 완전 무력화 */
   pointer-events: none !important;
-  z-index: 1 !important;
-}
-
-.modal-video-wrap.active {
-  position: relative !important;
-  width: 100% !important;
-  max-width: 500px !important;
-  aspect-ratio: 16 / 9 !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  z-index: 10 !important;
-  border-radius: 12px !important;
+  border-radius: 8px !important;
   overflow: hidden !important;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
-  background: #000;
+  background: #000 !important;
+  transition: all 0.25s ease !important;
 }
 
-.modal-video-wrap.active iframe,
-.modal-video-wrap.active #youtube-player-hidden {
+.yt-player-persistent-wrap iframe,
+.yt-player-persistent-wrap #youtube-player-hidden {
   width: 100% !important;
   height: 100% !important;
   border: none !important;
   display: block !important;
+}
+
+/* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 자연스럽게 확대 배치 */
+body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
+  top: calc(var(--header-height, 64px) + 24px) !important;
+  left: 50% !important;
+  bottom: auto !important;
+  transform: translateX(-50%) !important;
+  width: min(90vw, 540px) !important;
+  aspect-ratio: 16 / 9 !important;
+  height: auto !important;
+  z-index: 600 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  border-radius: 12px !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
+}
+
+@media (max-width: 768px) {
+  body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
+    top: calc(var(--header-height, 56px) + 16px) !important;
+    width: calc(100vw - 32px) !important;
+  }
+}
+
+.modal-video-wrap {
+  display: none !important;
+}
+
+body.player-modal-open.video-mode-active .modal-video-wrap {
+  display: block !important;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 540px !important;
+  aspect-ratio: 16 / 9 !important;
+  z-index: 601 !important;
+  pointer-events: none !important;
+}
+
+body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions {
+  pointer-events: auto !important;
 }
 
 .modal-track-info-row {
