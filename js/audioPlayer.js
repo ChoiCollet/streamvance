@@ -575,6 +575,11 @@ export class AudioPlayer {
   loadTrack(track, autoPlay = true) {
     if (!track) return;
 
+    // videoId 정규화 (yt- 접두어 제거 및 기본값 보장)
+    if (!track.videoId && track.id && typeof track.id === 'string' && !track.audioUrl) {
+      track.videoId = track.id.replace(/^yt-/, '');
+    }
+
     if (this.loadRetryTimer) {
       clearInterval(this.loadRetryTimer);
       this.loadRetryTimer = null;
@@ -583,11 +588,20 @@ export class AudioPlayer {
     // 양쪽 정지 후 로드
     this.audio.pause();
 
+    if (autoPlay) {
+      this.isPlaying = true;
+      this.isUserPaused = false;
+      // 사용자 직접 터치 제스처 스레드에서 즉시 하드웨어 오디오 클록 & 백그라운드 워커 동기 언락
+      this.startBgKeepAlive();
+      this.ensureAudioSound();
+    }
+
     if (track.videoId) {
       // 실제 YouTube 음악 스트리밍
       if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
         if (autoPlay) {
           this.ytPlayer.loadVideoById(track.videoId);
+          this.ensureAudioSound();
         } else {
           this.ytPlayer.cueVideoById(track.videoId);
         }
@@ -599,11 +613,12 @@ export class AudioPlayer {
             this.loadRetryTimer = null;
             if (autoPlay) {
               this.ytPlayer.loadVideoById(track.videoId);
+              this.ensureAudioSound();
             } else {
               this.ytPlayer.cueVideoById(track.videoId);
             }
           }
-        }, 200);
+        }, 150);
       }
     } else if (track.audioUrl) {
       // 로컬 파일 재생

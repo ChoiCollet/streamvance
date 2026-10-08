@@ -1274,7 +1274,23 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.btn-thumb.btn-like-track {
+  width: auto;
+  min-width: 34px;
+  padding: 0 8px;
+  border-radius: 17px;
+  gap: 4px;
+}
+
+.player-bar-like-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #aaa;
+  letter-spacing: -0.2px;
+  user-select: none;
 }
 
 .btn-thumb:hover {
@@ -1283,6 +1299,10 @@ a {
 }
 
 .btn-thumb.liked {
+  color: #fff;
+}
+
+.btn-thumb.liked .player-bar-like-count {
   color: #fff;
 }
 
@@ -2110,16 +2130,16 @@ a {
 }
 
 /* Video 모드: 무광고 유튜브 영상 플레이어 */
-/* 모바일 브라우저(삼성인터넷, 크롬) 오프스크린 스로틀링 방지: 뷰포트 내부(0, 0)에 2px로 상주 유지 */
+/* 모바일 브라우저(삼성인터넷, 크롬) 백그라운드 재생 방어: 240px x 240px 크기로 앨범아트 뒷단에 상주 (브라우저 비디오 스로틀링 완전 방어) */
 .modal-video-wrap:not(.active) {
-  position: fixed !important;
+  position: absolute !important;
   left: 0 !important;
   top: 0 !important;
-  width: 2px !important;
-  height: 2px !important;
-  opacity: 0.001 !important;
+  width: 240px !important;
+  height: 240px !important;
+  opacity: 0.01 !important;
   pointer-events: none !important;
-  z-index: -999 !important;
+  z-index: 1 !important;
 }
 
 .modal-video-wrap.active {

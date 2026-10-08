@@ -200,10 +200,22 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 d = json.loads(r.read().decode('utf-8', errors='ignore'))
                 s = json.dumps(d, ensure_ascii=False)
                 
+                # 좋아요 수 추출 (다양한 정규식 매칭)
                 m = re.search(r'([0-9,]+)명과 함께 이 동영상에 좋아요', s)
                 if m:
                     like_raw = int(m.group(1).replace(',', ''))
                     like_str = self.format_count_ko(like_raw)
+
+                if not like_str:
+                    m2 = re.search(r'좋아요\s*([0-9,.]+[만천억MKk]?)개', s)
+                    if m2:
+                        like_str = m2.group(1)
+
+                if not like_str:
+                    m3 = re.search(r'"likeCount":\s*"([0-9]+)"', s)
+                    if m3:
+                        like_raw = int(m3.group(1))
+                        like_str = self.format_count_ko(like_raw)
 
                 if not like_str:
                     m_txt = re.search(r'"defaultText":\{"accessibility":\{"accessibilityData":\{"label":"[^"]*([0-9,]+)[^"]*좋아요', s)
@@ -211,27 +223,34 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                         like_raw = int(m_txt.group(1).replace(',', ''))
                         like_str = self.format_count_ko(like_raw)
 
-                # 댓글 수 파싱
-                m_cmt = re.search(r'댓글\s*([0-9,만천억.]+)\s*개', s)
-                if m_cmt:
-                    comment_str = m_cmt.group(1)
+                # 댓글 수 파싱: 1순위 engagementPanels contextualInfo (예: 85만, 12만, 69만)
+                for p in d.get('engagementPanels', []):
+                    ep = p.get('engagementPanelSectionListRenderer', {})
+                    if 'comment' in ep.get('panelIdentifier', '').lower():
+                        hdr = ep.get('header', {}).get('engagementPanelTitleHeaderRenderer', {})
+                        ctx = hdr.get('contextualInfo', {}).get('runs', [{}])[0].get('text', '')
+                        if ctx:
+                            comment_str = ctx
+                            break
+
+                # 2순위: twoColumnWatchNextResults
+                if not comment_str:
+                    for section in d.get('contents', {}).get('twoColumnWatchNextResults', {}).get('results', {}).get('results', {}).get('contents', []):
+                        isr = section.get('itemSectionRenderer', {})
+                        header = isr.get('header', {}).get('commentsHeaderRenderer', {})
+                        if header:
+                            count_runs = header.get('countText', {}).get('runs', [])
+                            if count_runs and count_runs[0].get('text'):
+                                comment_str = count_runs[0].get('text')
+                                break
+
+                # 3순위: 정규식
+                if not comment_str:
+                    m_cmt = re.search(r'댓글\s*([0-9,만천억.]+)\s*개', s)
+                    if m_cmt:
+                        comment_str = m_cmt.group(1)
         except Exception:
             pass
-
-        # 2차: Invidious 미러 폴백 (보조)
-        if not like_str:
-            for inst in self.INVIDIOUS_MIRRORS:
-                try:
-                    url = f"{inst}/api/v1/videos/{video_id}"
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=2.5) as r:
-                        vdata = json.loads(r.read().decode('utf-8', errors='ignore'))
-                        if 'likeCount' in vdata:
-                            like_raw = int(vdata['likeCount'])
-                            like_str = self.format_count_ko(like_raw)
-                            break
-                except Exception:
-                    pass
 
         result = {
             'videoId': video_id,
@@ -269,20 +288,23 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             top_token = None
             new_token = None
             comment_count_str = '0'
+            is_disabled = False
+            disabled_msg = None
 
             # A. engagementPanels 에서 정렬 토큰 및 댓글 수 탐색
             panels = init_data.get('engagementPanels', [])
             for p in panels:
-                hdr = p.get('engagementPanelSectionListRenderer', {}).get('header', {})
-                th = hdr.get('engagementPanelTitleHeaderRenderer', {})
-                ctx = th.get('contextualInfo', {}).get('runs', [{}])[0].get('text', '')
-                if ctx:
-                    comment_count_str = ctx
-                submenu = th.get('menu', {}).get('sortFilterSubMenuRenderer', {}).get('subMenuItems', [])
-                if submenu:
-                    top_token = submenu[0].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
-                    if len(submenu) > 1:
-                        new_token = submenu[1].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                ep = p.get('engagementPanelSectionListRenderer', {})
+                if 'comment' in ep.get('panelIdentifier', '').lower():
+                    hdr = ep.get('header', {}).get('engagementPanelTitleHeaderRenderer', {})
+                    ctx = hdr.get('contextualInfo', {}).get('runs', [{}])[0].get('text', '')
+                    if ctx:
+                        comment_count_str = ctx
+                    submenu = hdr.get('menu', {}).get('sortFilterSubMenuRenderer', {}).get('subMenuItems', [])
+                    if submenu:
+                        top_token = submenu[0].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                        if len(submenu) > 1:
+                            new_token = submenu[1].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
                     break
 
             # B. contents itemSectionRenderer 에서 정렬 토큰 및 댓글 수 탐색
@@ -291,6 +313,10 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                     isr = section.get('itemSectionRenderer', {})
                     header = isr.get('header', {}).get('commentsHeaderRenderer', {})
                     if header:
+                        if 'commentsDisabledMessage' in header:
+                            is_disabled = True
+                            runs = header['commentsDisabledMessage'].get('runs', [])
+                            disabled_msg = ''.join([r.get('text', '') for r in runs]) or '댓글이 사용 중지되었습니다.'
                         count_runs = header.get('countText', {}).get('runs', [])
                         if count_runs:
                             comment_count_str = count_runs[0].get('text', comment_count_str)
@@ -307,12 +333,16 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                             top_token = cmd.get('token')
                             break
 
+            if is_disabled:
+                res = {'commentCount': '0', 'comments': [], 'disabled': True, 'disabledMessage': disabled_msg or '이 동영상(음원)은 유튜브 정책상 댓글이 사용 중지되어 있습니다.'}
+                self.COMMENTS_CACHE[cache_key] = res
+                return res
+
             target_token = new_token if (sort == 'new' and new_token) else top_token
             if target_token:
                 payload_cont = json.dumps({
                     'context': {
-                        'client': {'clientName': 'WEB', 'clientVersion': '2.20240401.01.00', 'hl': 'ko', 'gl': 'KR'}
-                    },
+                        'client': {'clientName': 'WEB', 'clientVersion': '2.20240401.01.00', 'hl': 'ko', 'gl': 'KR'}},
                     'continuation': target_token
                 }).encode('utf-8')
 
@@ -324,6 +354,21 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
 
                 with urllib.request.urlopen(req_cont, timeout=6) as cr:
                     cont_data = json.loads(cr.read().decode('utf-8', errors='ignore'))
+
+                # continuation 응답 내부에서 disabled 여부 재확인
+                for ep in cont_data.get('onResponseReceivedEndpoints', []):
+                    cmd = ep.get('reloadContinuationItemsCommand', {}) or ep.get('appendContinuationItemsAction', {})
+                    for it in cmd.get('continuationItems', []):
+                        chr = it.get('commentsHeaderRenderer', {})
+                        if 'commentsDisabledMessage' in chr:
+                            is_disabled = True
+                            runs = chr['commentsDisabledMessage'].get('runs', [])
+                            disabled_msg = ''.join([r.get('text', '') for r in runs]) or '댓글이 사용 중지되었습니다.'
+
+                if is_disabled:
+                    res = {'commentCount': '0', 'comments': [], 'disabled': True, 'disabledMessage': disabled_msg or '이 동영상(음원)은 유튜브 정책상 댓글이 사용 중지되어 있습니다.'}
+                    self.COMMENTS_CACHE[cache_key] = res
+                    return res
 
                 comments = []
                 # 1순위: Mutations (YouTube 최신 Entity 모델)
@@ -348,7 +393,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                                 'replyCount': reply_count
                             })
 
-                # 2순위: commentRenderer / commentViewModel 전통 방식
+                # 2순위: commentRenderer
                 if not comments:
                     for ep in cont_data.get('onResponseReceivedEndpoints', []):
                         actions = ep.get('reloadContinuationItemsCommand', {}).get('continuationItems', []) or \
@@ -377,48 +422,15 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                                 })
 
                 clean_count = re.sub(r'[^0-9만천억,.]', '', comment_count_str).strip() or str(len(comments))
-                if comments:
-                    res = {
-                        'commentCount': clean_count,
-                        'comments': comments[:50]
-                    }
-                    self.COMMENTS_CACHE[cache_key] = res
-                    return res
+                res = {
+                    'commentCount': clean_count if clean_count != '0' else str(len(comments)),
+                    'comments': comments[:50]
+                }
+                self.COMMENTS_CACHE[cache_key] = res
+                return res
+
         except Exception as e:
             print(f"InnerTube comments error: {e}", file=sys.stderr)
-
-        # 2. 보조 Invidious 미러 폴백 (비상용)
-        sort_param = 'top' if sort == 'top' else 'new'
-        for inst in self.INVIDIOUS_MIRRORS:
-            try:
-                url = f"{inst}/api/v1/comments/{video_id}?sort_by={sort_param}"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=3.5) as resp:
-                    data = json.loads(resp.read().decode('utf-8'))
-                    raw_comments = data.get('comments', [])
-                    formatted_comments = []
-                    for c in raw_comments[:50]:
-                        thumbs = c.get('authorThumbnails', [])
-                        avatar = thumbs[-1].get('url') if thumbs else ''
-                        if avatar.startswith('//'):
-                            avatar = 'https:' + avatar
-                        formatted_comments.append({
-                            'author': c.get('author', ''),
-                            'avatar': avatar,
-                            'publishedText': c.get('publishedText', ''),
-                            'content': c.get('content', ''),
-                            'likeCount': self.format_count_ko(c.get('likeCount', 0)),
-                            'replyCount': c.get('replyCount', 0)
-                        })
-                    if formatted_comments:
-                        res = {
-                            'commentCount': self.format_count_ko(data.get('commentCount', len(formatted_comments))),
-                            'comments': formatted_comments
-                        }
-                        self.COMMENTS_CACHE[cache_key] = res
-                        return res
-            except Exception:
-                continue
 
         return {'commentCount': '0', 'comments': []}
 

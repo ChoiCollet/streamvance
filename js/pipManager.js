@@ -31,22 +31,18 @@ export class PiPManager {
            (typeof HTMLVideoElement !== 'undefined' && 'requestPictureInPicture' in HTMLVideoElement.prototype);
   }
 
-  // PiP 열기/닫기 토글
+  // PiP 열기/닫기 토글 (외부 시스템 창 1순위: PC는 Document PiP, 모바일은 Native Video PiP)
   async togglePiP() {
-    // 1. 이미 인페이지 플로팅 미니 플레이어가 열려있다면 닫기
-    if (this.isFloatingOpen) {
-      this.toggleInPageFloating();
-      return;
-    }
-
-    // 2. 이미 데스크톱 Document PiP가 열려있다면 닫기
+    // 1. 이미 데스크톱 Document PiP가 열려있다면 닫기
     if (this.pipWindow) {
-      this.pipWindow.close();
+      try {
+        this.pipWindow.close();
+      } catch (e) {}
       this.pipWindow = null;
       return;
     }
 
-    // 3. 이미 네이티브 Video PiP가 활성화되어 있다면 닫기
+    // 2. 이미 네이티브 Video PiP가 활성화되어 있다면 닫기
     if (document.pictureInPictureElement) {
       try {
         await document.exitPictureInPicture();
@@ -54,39 +50,46 @@ export class PiPManager {
       } catch (e) {}
     }
 
-    // 사운드 음소거 방지 및 볼륨 보장
-    if (this.player && typeof this.player.ensureAudioSound === 'function') {
-      this.player.ensureAudioSound();
-    }
-
-    // 4. 모바일 환경(삼성인터넷 등)에서는 오디오 포커스를 가로채지 않아 사운드가 100% 유지되는 플로팅 미니 플레이어 즉시 실행
-    const isMobile = /Android|iPhone|iPad|iPod|SamsungBrowser/i.test(navigator.userAgent) || window.innerWidth <= 768;
-    if (isMobile) {
+    // 3. 인페이지 플로팅 창이 열려있다면 닫기
+    if (this.isFloatingOpen) {
       this.toggleInPageFloating();
       return;
     }
 
-    // 5. 데스크톱 환경에서는 Document Picture-in-Picture 실행
+    // 사운드 음소거 방지 및 볼륨 보장
+    if (this.player && typeof this.player.ensureAudioSound === 'function') {
+      this.player.ensureAudioSound();
+      this.player.startBgKeepAlive();
+    }
+
+    // 4. 데스크톱 환경 (크롬 116+ Document PiP 지원 시) 외부 독립 창으로 1순위 실행
     if (this.isDocPiPSupported()) {
       try {
         await this.openDocumentPiP();
         return;
       } catch (err) {
-        console.warn("Document PiP failed, falling back to floating PiP:", err);
+        console.warn("Document PiP failed, trying Native Video PiP:", err);
       }
     }
 
-    // 6. 폴백: 인페이지 플로팅 미니 플레이어 토글
+    // 5. 모바일(삼성인터넷, 크롬 안드로이드 등) 및 일반 브라우저: 실제 OS 시스템 화면에 뜨는 Native Video PiP 실행
+    if (this.isVideoPiPSupported()) {
+      try {
+        await this.openNativeVideoPiP();
+        return;
+      } catch (err) {
+        console.warn("Native Video PiP failed:", err);
+      }
+    }
+
+    // 6. 브라우저에서 외부 PiP API가 모두 차단/미지원될 때만 최종 비상용 폴백
     this.toggleInPageFloating();
   }
 
   // 모바일 삼성인터넷/크롬용 네이티브 Video PiP (실제 안드로이드 OS 시스템 플로팅 창 생성)
   async openNativeVideoPiP() {
     const track = this.player.getCurrentTrack();
-    if (!track) {
-      this.ui.showToast('재생 중인 곡이 없습니다.');
-      return;
-    }
+    if (!track) return;
 
     let video = document.getElementById('native-pip-video');
     let canvas = document.getElementById('native-pip-canvas');
@@ -94,9 +97,10 @@ export class PiPManager {
       video = document.createElement('video');
       video.id = 'native-pip-video';
       video.playsInline = true;
-      video.muted = true;
+      video.muted = false; // 안드로이드 OS가 유튜브 백그라운드 오디오를 차단하지 않도록 음소거 해제
+      video.volume = 0.001; // 초미세 볼륨으로 하드웨어 오디오 스트림 활성화 유지
       video.autoplay = true;
-      video.style.cssText = 'position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-999;';
+      video.style.cssText = 'position:fixed;bottom:0;right:0;width:10px;height:10px;opacity:0.01;pointer-events:none;z-index:-999;';
       document.body.appendChild(video);
     }
     if (!canvas) {
@@ -108,13 +112,32 @@ export class PiPManager {
       document.body.appendChild(canvas);
     }
 
-    // 캔버스 초기 드로잉
+    // 캔버스 초기 드로잉 (앨범아트, 제목, 가사, 이퀄라이저)
     this.renderPiPCanvas(canvas, track, this.currentLyricText);
 
-    // Canvas Video Stream 바인딩
-    if (!video.srcObject && canvas.captureStream) {
+    // Canvas Video Stream 바인딩 및 안드로이드 오디오 세션 앵커 연결
+    if (canvas.captureStream) {
       try {
-        video.srcObject = canvas.captureStream(15);
+        const stream = canvas.captureStream(15);
+        // 안드로이드 OS에서 PiP 진입 시 백그라운드 사운드가 음소거되는 현상 방지: 가상 오디오 트랙 합성
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            const actx = new AudioCtx();
+            const osc = actx.createOscillator();
+            const dst = actx.createMediaStreamDestination();
+            const gain = actx.createGain();
+            gain.gain.value = 0.0001;
+            osc.connect(gain);
+            gain.connect(dst);
+            osc.start();
+            const aTracks = dst.stream.getAudioTracks();
+            if (aTracks && aTracks.length > 0) {
+              stream.addTrack(aTracks[0]);
+            }
+          }
+        } catch (e) {}
+        video.srcObject = stream;
       } catch (e) {
         console.warn("captureStream error:", e);
       }
@@ -124,13 +147,33 @@ export class PiPManager {
       await video.play();
     } catch (e) {}
 
+    // 메인 오디오 플레이어 음소거 방지 및 재생 유지
+    if (this.player) {
+      this.player.ensureAudioSound();
+      this.player.startBgKeepAlive();
+      if (this.player.isPlaying && !this.player.isUserPaused) {
+        this.player.forceResumePlayback();
+      }
+    }
+
     try {
       await video.requestPictureInPicture();
       this.isNativePiPActive = true;
 
+      // PiP 진입 직후 유튜브 플레이어 사운드 재확인
+      if (this.player) {
+        this.player.ensureAudioSound();
+        if (this.player.isPlaying && !this.player.isUserPaused) {
+          this.player.forceResumePlayback();
+        }
+      }
+
       video.addEventListener('leavepictureinpicture', () => {
         this.isNativePiPActive = false;
         this.stopPiPCanvasLoop();
+        if (this.player) {
+          this.player.ensureAudioSound();
+        }
       }, { once: true });
 
       this.startPiPCanvasLoop();
@@ -254,10 +297,7 @@ export class PiPManager {
   // 1. 브라우저 창 밖으로 띄우는 공식 Document PiP 팝업 (PC)
   async openDocumentPiP() {
     const track = this.player.getCurrentTrack();
-    if (!track) {
-      this.ui.showToast('재생 중인 곡이 없습니다.');
-      return;
-    }
+    if (!track) return;
 
     // 모달이 열려있다면 닫아줌
     const modal = document.getElementById('full-player-modal');

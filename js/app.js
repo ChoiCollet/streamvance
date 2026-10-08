@@ -2163,7 +2163,7 @@ function initApp() {
     btnPillComment.addEventListener('click', () => {
       const cur = player.getCurrentTrack();
       if (cur) {
-        const vid = cur.videoId || (cur.id && cur.id.startsWith('yt-') ? cur.id.replace('yt-', '') : null);
+        const vid = cur.videoId || (cur.id && typeof cur.id === 'string' ? cur.id.replace(/^yt-/, '') : null);
         ui.openCommentsSheet(vid, 'top');
       }
     });

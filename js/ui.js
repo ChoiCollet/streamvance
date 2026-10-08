@@ -1316,7 +1316,7 @@ export class UIManager {
     if (sheetTitle) this.applyMarqueeIfOverflow(sheetTitle);
 
     // 유튜브 실시간 좋아요 수 및 댓글 수 갱신 (사용자 요청 6번)
-    const vid = track.videoId || (track.id && track.id.startsWith('yt-') ? track.id.replace('yt-', '') : null);
+    const vid = track.videoId || (track.id && typeof track.id === 'string' ? track.id.replace(/^yt-/, '') : null);
     this.updateVideoDetails(vid);
 
     // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관 (가사 대용량 배열 제외하여 쿼터 안전 보장)
@@ -1413,10 +1413,12 @@ export class UIManager {
   async updateVideoDetails(videoId) {
     const likeCountEl = document.getElementById('pill-like-count');
     const commentCountEl = document.getElementById('pill-comment-count');
+    const barLikeCountEl = document.getElementById('player-bar-like-count');
     const sheetCount = document.getElementById('comments-sheet-total-count');
 
     if (!videoId) {
       if (likeCountEl) likeCountEl.textContent = '좋아요';
+      if (barLikeCountEl) barLikeCountEl.style.display = 'none';
       if (commentCountEl) commentCountEl.textContent = '댓글';
       if (sheetCount) sheetCount.textContent = '0';
       return;
@@ -1426,7 +1428,16 @@ export class UIManager {
       const res = await fetch(`/api/video-details?id=${encodeURIComponent(videoId)}`);
       if (res.ok) {
         const data = await res.json();
-        if (likeCountEl && data.likeCount) likeCountEl.textContent = data.likeCount;
+        if (data.likeCount && data.likeCount !== '좋아요') {
+          if (likeCountEl) likeCountEl.textContent = data.likeCount;
+          if (barLikeCountEl) {
+            barLikeCountEl.textContent = data.likeCount;
+            barLikeCountEl.style.display = 'inline-block';
+          }
+        } else {
+          if (likeCountEl) likeCountEl.textContent = '좋아요';
+          if (barLikeCountEl) barLikeCountEl.style.display = 'none';
+        }
         if (commentCountEl && data.commentCount) commentCountEl.textContent = data.commentCount;
         if (sheetCount && data.commentCount) sheetCount.textContent = data.commentCount;
       }
@@ -1467,7 +1478,21 @@ export class UIManager {
       if (loading) loading.style.display = 'none';
       if (res.ok) {
         const data = await res.json();
-        this.renderCommentsList(data.comments || []);
+        if (data.disabled) {
+          if (list) {
+            list.innerHTML = `
+              <div style="text-align: center; color: var(--text-muted); padding: 50px 20px;">
+                <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px auto;">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-muted);"><circle cx="12" cy="10" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                </div>
+                <p style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px;">댓글 사용 중지됨</p>
+                <p style="font-size: 13px; line-height: 1.5; color: var(--text-muted);">${data.disabledMessage || '이 동영상(음원)은 유튜브 정책에 의해 댓글이 사용 중지되어 있습니다.'}</p>
+              </div>
+            `;
+          }
+        } else {
+          this.renderCommentsList(data.comments || []);
+        }
         if (data.commentCount) {
           const sheetCount = document.getElementById('comments-sheet-total-count');
           const pillCount = document.getElementById('pill-comment-count');
