@@ -2976,6 +2976,66 @@ function initApp() {
     if (window.lucide) window.lucide.createIcons();
   });
 
+  // 17. 삼성인터넷 모바일 백그라운드 재생 가이드 모달 바인딩
+  const bgGuideModal = document.getElementById('bg-guide-modal');
+  const btnCloseBgGuide = document.getElementById('btn-close-bg-guide');
+  const btnBgGuideConfirm = document.getElementById('btn-bg-guide-confirm');
+  const bgGuideBackdrop = document.getElementById('bg-guide-backdrop');
+  const btnBgGuideTestPip = document.getElementById('btn-bg-guide-test-pip');
+  const sheetActBgGuide = document.getElementById('sheet-act-bg-guide');
+  const accountItemBgGuide = document.getElementById('account-item-bg-guide');
+
+  const openBgGuideModal = () => {
+    if (bgGuideModal) {
+      bgGuideModal.style.display = 'flex';
+      if (window.lucide) window.lucide.createIcons();
+    }
+  };
+
+  const closeBgGuideModal = () => {
+    if (bgGuideModal) {
+      bgGuideModal.style.display = 'none';
+    }
+  };
+
+  if (btnCloseBgGuide) btnCloseBgGuide.addEventListener('click', closeBgGuideModal);
+  if (btnBgGuideConfirm) btnBgGuideConfirm.addEventListener('click', closeBgGuideModal);
+  if (bgGuideBackdrop) bgGuideBackdrop.addEventListener('click', closeBgGuideModal);
+
+  if (sheetActBgGuide) {
+    sheetActBgGuide.addEventListener('click', () => {
+      ui.closeTrackMoreSheet();
+      openBgGuideModal();
+    });
+  }
+
+  if (accountItemBgGuide) {
+    accountItemBgGuide.addEventListener('click', () => {
+      const accountDrawer = document.getElementById('account-drawer-overlay');
+      if (accountDrawer) accountDrawer.classList.remove('active');
+      openBgGuideModal();
+    });
+  }
+
+  if (btnBgGuideTestPip) {
+    btnBgGuideTestPip.addEventListener('click', async () => {
+      closeBgGuideModal();
+      await pipManager.togglePiP();
+    });
+  }
+
+  // 모바일 삼성인터넷 환경 감지 시 첫 곡 재생 시 안심 토스트 알림
+  const isSamsungBrowser = /SamsungBrowser/i.test(navigator.userAgent);
+  let hasShownSamsungTip = false;
+  const prevOnPlayState = player.callbacks.onPlayStateChange;
+  player.callbacks.onPlayStateChange = (isPlaying) => {
+    if (typeof prevOnPlayState === 'function') prevOnPlayState(isPlaying);
+    if (isPlaying && isSamsungBrowser && !hasShownSamsungTip) {
+      hasShownSamsungTip = true;
+      ui.showToast('🎵 삼성인터넷 무중단 백그라운드 재생 엔진이 활성화되었습니다.');
+    }
+  };
+
   // Lucide Icons 초기 렌더링
   if (window.lucide) {
     window.lucide.createIcons();

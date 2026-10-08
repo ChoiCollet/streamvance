@@ -37,6 +37,7 @@ export class AudioPlayer {
   }
 
   // YouTube IFrame API 초기화
+  // YouTube IFrame API 초기화
   initYouTubePlayer() {
     const setupYT = () => {
       if (window.YT && window.YT.Player) {
@@ -49,7 +50,11 @@ export class AudioPlayer {
             disablekb: 1,
             enablejsapi: 1,
             origin: window.location.origin,
-            playsinline: 1
+            playsinline: 1,
+            html5: 1,
+            rel: 0,
+            fs: 0,
+            iv_load_policy: 3
           },
           events: {
             onReady: (event) => {
@@ -67,30 +72,21 @@ export class AudioPlayer {
                 this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
               } else if (event.data === 2) {
-                // 모바일 백그라운드 전환 가드: 화면 꺼짐 및 홈 이동 시 유튜브 자체 강제 일시정지 즉시 방어
-                if (typeof document !== 'undefined' && document.hidden && !this.isUserPaused) {
-                  this.startBgKeepAlive();
-                  this.syncMediaSessionPlaybackState();
-                  // 즉각 자동 재개 (모바일 화면 꺼짐 시 일시정지 방어)
-                  setTimeout(() => {
-                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-                      try { this.ytPlayer.playVideo(); } catch (e) {}
-                    }
-                  }, 120);
-                  // 2차 백업 재개
-                  setTimeout(() => {
-                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
-                      if (this.ytPlayer.getPlayerState() !== 1) {
-                        try { this.ytPlayer.playVideo(); } catch (e) {}
-                      }
-                    }
-                  }, 600);
-                } else {
+                if (this.isUserPaused) {
+                  // 사용자가 UI 또는 알림창에서 직접 일시정지를 누른 정상 일시정지
                   this.isPlaying = false;
                   this.stopProgressSync();
                   this.stopBgKeepAlive();
                   this.syncMediaSessionPlaybackState();
                   if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+                } else {
+                  // [삼성인터넷 모바일 핵심 방어 가드]
+                  // 사용자가 정지하지 않았는데 일시정지(State 2) 발생 = 모바일 화면 꺼짐, 홈 이동, 브라우저 비디오 스로틀링!
+                  // isPlaying 상태를 절대 해제하지 않고, 백그라운드 재생 엔진을 즉각 가동하여 무중단 재개!
+                  this.isPlaying = true;
+                  this.startBgKeepAlive();
+                  this.syncMediaSessionPlaybackState();
+                  this.forceResumePlayback();
                 }
               } else if (event.data === 0) {
                 // 재생 완료 시
@@ -135,16 +131,25 @@ export class AudioPlayer {
 
     this.audio.addEventListener('play', () => {
       this.isPlaying = true;
+      this.isUserPaused = false;
       this.startBgKeepAlive();
       this.syncMediaSessionPlaybackState();
       if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
     });
 
     this.audio.addEventListener('pause', () => {
-      this.isPlaying = false;
-      this.stopBgKeepAlive();
-      this.syncMediaSessionPlaybackState();
-      if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+      if (this.isUserPaused) {
+        this.isPlaying = false;
+        this.stopBgKeepAlive();
+        this.syncMediaSessionPlaybackState();
+        if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+      } else {
+        // 백그라운드 비자발적 pause 방어
+        this.isPlaying = true;
+        this.startBgKeepAlive();
+        this.syncMediaSessionPlaybackState();
+        try { this.audio.play(); } catch (e) {}
+      }
     });
 
     this.audio.addEventListener('timeupdate', () => {
@@ -172,26 +177,51 @@ export class AudioPlayer {
     });
   }
 
-  // 1. 모바일 백그라운드 재생 완벽 우회 엔진 (삼성인터넷, 크롬 모바일 화면 꺼짐 시 자동 정지 원천 무력화)
+  // 1. 삼성인터넷 & 모바일 브라우저 무중단 백그라운드 재생 마스터 엔진
   initBgKeepAlive() {
-    // [우회 1단계: Page Visibility API 전역 스푸핑]
-    // 유튜브 iframe 및 내장 스크립트가 화면 꺼짐 / 탭 백그라운드를 감지하지 못하도록 가짜 포그라운드 상태 유지
+    this.bgPulseWorker = null;
+    this.bgKeepAliveAudio = null;
+    this.webAudioCtx = null;
+
+    // [우회 1단계: Web Worker 기반 무동결 하트비트 루프]
+    // 모바일 OS가 화면 꺼짐 시 메인 스레드 타이머(setTimeout/setInterval)를 동결하더라도,
+    // Web Worker는 백그라운드 독립 스레드에서 지속적으로 틱(TICK)을 전송하여 메인 스레드를 깨움
     try {
-      Object.defineProperty(document, 'hidden', {
-        get: () => false,
-        configurable: true
-      });
-      Object.defineProperty(document, 'visibilityState', {
-        get: () => 'visible',
-        configurable: true
-      });
+      const workerCode = `
+        let timer = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (!timer) {
+              timer = setInterval(function() {
+                self.postMessage('TICK');
+              }, 250);
+            }
+          } else if (e.data === 'stop') {
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
+            }
+          }
+        };
+      `;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      this.bgPulseWorker = new Worker(workerUrl);
+      this.bgPulseWorker.onmessage = (e) => {
+        if (e.data === 'TICK') {
+          // 화면이 꺼진 암전 상태에서도 지속적인 재생 생명력 사수
+          if (this.isPlaying && !this.isUserPaused) {
+            this.keepPlaybackAlive();
+          }
+        }
+      };
     } catch (e) {
-      console.warn("Visibility spoofing warning:", e);
+      console.warn("Web Worker keepalive setup fallback:", e);
     }
 
+    // [우회 2단계: 모바일 OS 사운드 칩셋 하드웨어 오디오 클록 앵커]
+    // Android AudioFlinger에 활성 오디오 파이프라인을 등록하여 브라우저 프로세스 강제 절전 방어
     try {
-      // [우회 2단계: 모바일 OS 오디오 하드웨어 앵커 생성]
-      // 1초 무음 WAV 생성 (삼성인터넷 백그라운드 재생 프로세스 강제 트리거)
       const sampleRate = 44100;
       const numSamples = sampleRate; // 1 second
       const buffer = new ArrayBuffer(44 + numSamples * 2);
@@ -218,28 +248,19 @@ export class AudioPlayer {
       const blob = new Blob([buffer], { type: 'audio/wav' });
       this.bgKeepAliveAudio = new Audio(URL.createObjectURL(blob));
       this.bgKeepAliveAudio.loop = true;
-      this.bgKeepAliveAudio.volume = 0.05;
+      this.bgKeepAliveAudio.volume = 0.01;
 
-      // [우회 3단계: 하드웨어 오디오 클록(Hardware Audio Clock) 기반 무중단 재개 루프]
-      // timeupdate 이벤트는 화면이 꺼지거나 백그라운드로 전환되어도 모바일 OS 사운드 칩셋의 하드웨어 타이머로 계속 작동함
-      // 백그라운드에서 유튜브가 일시정지(State 2)를 시도하는 즉시 0.2초 내에 playVideo()를 강제 재실행!
+      // timeupdate 이벤트는 OS 사운드 하드웨어 타이머로 구동되어 화면이 꺼져도 0.25초마다 발생함
       this.bgKeepAliveAudio.addEventListener('timeupdate', () => {
-        if (this.isPlaying && !this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
-          const state = this.ytPlayer.getPlayerState();
-          // YT.PlayerState: PLAYING = 1, BUFFERING = 3
-          if (state !== 1 && state !== 3) {
-            try {
-              this.ytPlayer.playVideo();
-            } catch (e) {}
-          }
+        if (this.isPlaying && !this.isUserPaused) {
+          this.keepPlaybackAlive();
         }
       });
     } catch (e) {
-      console.warn("Bg keepalive init error:", e);
+      console.warn("Bg keepalive audio init error:", e);
     }
 
-    // [우회 4단계: Web Audio API 초저음 펄스 앵커]
-    // 삼성인터넷/안드로이드 AudioFlinger에 액티브 오디오 세션 등록
+    // [우회 3단계: Web Audio API 초저음 펄스 앵커]
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
@@ -247,33 +268,100 @@ export class AudioPlayer {
         const osc = this.webAudioCtx.createOscillator();
         const gain = this.webAudioCtx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(20, this.webAudioCtx.currentTime); // 귀에 안들리는 초저음(20Hz)
-        gain.gain.setValueAtTime(0.001, this.webAudioCtx.currentTime); // 사실상 무음
+        osc.frequency.setValueAtTime(20, this.webAudioCtx.currentTime); // 비가청 초저음 20Hz
+        gain.gain.setValueAtTime(0.0001, this.webAudioCtx.currentTime); // 사실상 무음
         osc.connect(gain);
         gain.connect(this.webAudioCtx.destination);
         osc.start();
       }
     } catch (e) {}
 
-    // 모바일 탭 백그라운드 전환 및 화면 꺼짐 감지 시 즉각 방어 가드
+    // [우회 4단계: 모바일 사용자 최초 터치 제스처 시점 전역 오디오 언락]
+    this.initAudioUnlockListeners();
+
+    // [우회 5단계: 화면 꺼짐/백그라운드 전환 감지 즉시 자동 방어]
     if (typeof document !== 'undefined') {
       const handleBackgroundTransition = () => {
         if (this.isPlaying && !this.isUserPaused) {
           this.startBgKeepAlive();
           this.syncMediaSessionPlaybackState();
-          if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
-            this.webAudioCtx.resume().catch(() => {});
-          }
-          if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-            try { this.ytPlayer.playVideo(); } catch (e) {}
-          }
+          this.forceResumePlayback();
         }
       };
 
       document.addEventListener('visibilitychange', handleBackgroundTransition, true);
-      window.addEventListener('pagehide', handleBackgroundTransition);
-      window.addEventListener('blur', handleBackgroundTransition);
+      window.addEventListener('pagehide', handleBackgroundTransition, true);
+      window.addEventListener('blur', handleBackgroundTransition, true);
+      window.addEventListener('focus', () => {
+        if (this.isPlaying && !this.isUserPaused) {
+          this.syncMediaSessionPlaybackState();
+          this.forceResumePlayback();
+        }
+      });
     }
+  }
+
+  // 모바일 브라우저(삼성인터넷/크롬/사파리) 오디오 엔진 영구 언락
+  initAudioUnlockListeners() {
+    const unlock = () => {
+      if (this.bgKeepAliveAudio) {
+        this.bgKeepAliveAudio.play().then(() => {
+          if (!this.isPlaying) {
+            this.bgKeepAliveAudio.pause();
+          }
+        }).catch(() => {});
+      }
+      if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+        this.webAudioCtx.resume().catch(() => {});
+      }
+      if (this.audio) {
+        this.audio.play().then(() => {
+          if (!this.isPlaying || !this.isCurrentLocal()) {
+            this.audio.pause();
+          }
+        }).catch(() => {});
+      }
+    };
+
+    const opts = { capture: true, passive: true };
+    ['touchstart', 'touchend', 'pointerdown', 'click'].forEach(evt => {
+      window.addEventListener(evt, unlock, opts);
+    });
+  }
+
+  // 백그라운드 상태에서 유튜브 플레이어 상태 지속 감시 및 재생 유지
+  keepPlaybackAlive() {
+    if (!this.isPlaying || this.isUserPaused) return;
+
+    if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+      try {
+        const state = this.ytPlayer.getPlayerState();
+        // 1: PLAYING, 3: BUFFERING
+        if (state !== 1 && state !== 3) {
+          this.ytPlayer.playVideo();
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 화면 꺼짐 직후 비자발적 정지 발생 시 연속 복구 펄스 발사
+  forceResumePlayback() {
+    if (this.isUserPaused) return;
+
+    if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+      try { this.ytPlayer.playVideo(); } catch (e) {}
+    }
+
+    [15, 60, 180, 450, 1000].forEach(delay => {
+      setTimeout(() => {
+        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+          const state = this.ytPlayer.getPlayerState();
+          if (state !== 1 && state !== 3) {
+            try { this.ytPlayer.playVideo(); } catch (e) {}
+          }
+        }
+      }, delay);
+    });
   }
 
   startBgKeepAlive() {
@@ -283,11 +371,17 @@ export class AudioPlayer {
     if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
       this.webAudioCtx.resume().catch(() => {});
     }
+    if (this.bgPulseWorker) {
+      try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
+    }
   }
 
   stopBgKeepAlive() {
     if (this.bgKeepAliveAudio) {
       this.bgKeepAliveAudio.pause();
+    }
+    if (this.bgPulseWorker) {
+      try { this.bgPulseWorker.postMessage('stop'); } catch (e) {}
     }
   }
 
@@ -297,10 +391,10 @@ export class AudioPlayer {
 
     try {
       navigator.mediaSession.setActionHandler('play', () => {
-        this.togglePlayPause();
+        this.play();
       });
       navigator.mediaSession.setActionHandler('pause', () => {
-        this.togglePlayPause();
+        this.pause();
       });
       navigator.mediaSession.setActionHandler('stop', () => {
         this.pause();
@@ -501,11 +595,54 @@ export class AudioPlayer {
       }
     }
 
+    this.isUserPaused = !autoPlay;
     this.updateMediaSession(track);
 
     if (this.callbacks.onTrackChange) {
       this.callbacks.onTrackChange(track, this.currentIndex);
     }
+  }
+
+  play() {
+    this.isUserPaused = false;
+    const currentTrack = this.getCurrentTrack();
+    if (!currentTrack) {
+      if (this.queue.length > 0) {
+        this.loadTrack(this.queue[0], true);
+      }
+      return;
+    }
+
+    if (currentTrack.videoId && this.ytPlayer) {
+      this.isPlaying = true;
+      try {
+        if (typeof this.ytPlayer.playVideo === 'function') {
+          this.ytPlayer.playVideo();
+        }
+      } catch (e) {}
+      this.startBgKeepAlive();
+    } else if (this.audio) {
+      this.isPlaying = true;
+      this.audio.play().catch(e => console.warn(e));
+      this.startBgKeepAlive();
+    }
+    this.syncMediaSessionPlaybackState();
+    if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
+  }
+
+  pause() {
+    this.isUserPaused = true;
+    this.isPlaying = false;
+    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+      try { this.ytPlayer.pauseVideo(); } catch (e) {}
+    }
+    if (this.audio) {
+      this.audio.pause();
+    }
+    this.stopBgKeepAlive();
+    this.stopProgressSync();
+    this.syncMediaSessionPlaybackState();
+    if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
   }
 
   togglePlayPause() {
@@ -520,26 +657,17 @@ export class AudioPlayer {
     if (currentTrack.videoId && this.ytPlayer) {
       const state = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
       if (state === 1) { // playing -> user pauses
-        this.isUserPaused = true;
-        this.ytPlayer.pauseVideo();
-        this.stopBgKeepAlive();
+        this.pause();
       } else { // paused -> user plays
-        this.isUserPaused = false;
-        this.ytPlayer.playVideo();
-        this.startBgKeepAlive();
+        this.play();
       }
     } else {
       if (this.audio.paused) {
-        this.isUserPaused = false;
-        this.audio.play();
-        this.startBgKeepAlive();
+        this.play();
       } else {
-        this.isUserPaused = true;
-        this.audio.pause();
-        this.stopBgKeepAlive();
+        this.pause();
       }
     }
-    this.syncMediaSessionPlaybackState();
   }
 
   playTrackAtIndex(index) {

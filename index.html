@@ -1222,6 +1222,10 @@
             <i data-lucide="subtitles"></i>
             <span>자막</span>
           </button>
+          <button class="sheet-action-item" id="sheet-act-bg-guide">
+            <i data-lucide="smartphone"></i>
+            <span>삼성인터넷 백그라운드 안내</span>
+          </button>
         </div>
       </div>
     </div>
@@ -1291,10 +1295,84 @@
             <i data-lucide="settings"></i>
             <span>설정</span>
           </button>
+          <button class="account-menu-item" id="account-item-bg-guide">
+            <i data-lucide="smartphone"></i>
+            <span>삼성인터넷 백그라운드 안내</span>
+          </button>
           <button class="account-menu-item" id="account-item-help">
             <i data-lucide="help-circle"></i>
             <span>고객센터</span>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 삼성인터넷 & 모바일 백그라운드 무중단 가이드 모달 -->
+    <div class="bg-guide-modal" id="bg-guide-modal" style="display: none;">
+      <div class="bg-guide-backdrop" id="bg-guide-backdrop"></div>
+      <div class="bg-guide-content">
+        <div class="bg-guide-header">
+          <div class="bg-guide-icon-badge">
+            <i data-lucide="sparkles"></i>
+          </div>
+          <div class="bg-guide-title-box">
+            <h3 class="bg-guide-title">삼성인터넷 백그라운드 무중단 재생 가이드</h3>
+            <p class="bg-guide-subtitle">화면이 꺼지거나 다른 앱을 켜도 절대 멈추지 않는 스트리밍</p>
+          </div>
+          <button class="bg-guide-close-btn" id="btn-close-bg-guide" title="닫기">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div class="bg-guide-body">
+          <div class="bg-guide-status-card">
+            <div class="status-pulse-dot"></div>
+            <div>
+              <strong>Streamvance 2.0 백그라운드 가드 엔진 가동 중</strong>
+              <p>Web Worker 하트비트와 사운드 칩셋 하드웨어 오디오 클록이 화면 꺼짐 시 자동 정지를 0.2초 내에 실시간 방어합니다.</p>
+            </div>
+          </div>
+
+          <div class="bg-guide-steps">
+            <h4>💡 삼성인터넷 브라우저 설정 확인 (권장 10초 완료)</h4>
+            <div class="bg-step-item">
+              <span class="step-num">1</span>
+              <div>
+                <strong>삼성인터넷 우측 하단 [메뉴 (≡)] 터치</strong>
+                <p>브라우저 화면 오른쪽 아래 세 줄(≡) 버튼을 누릅니다.</p>
+              </div>
+            </div>
+            <div class="bg-step-item">
+              <span class="step-num">2</span>
+              <div>
+                <strong>[설정 (톱니바퀴)] → [유용한 기능] 선택</strong>
+                <p>목록에서 '유용한 기능'을 찾아 들어갑니다.</p>
+              </div>
+            </div>
+            <div class="bg-step-item">
+              <span class="step-num">3</span>
+              <div>
+                <strong>[백그라운드 재생]을 '항상 켜짐'으로 설정</strong>
+                <p>브라우저 자체 절전 차단이 영구 해제되어 화면을 꺼도 100% 무중단 재생됩니다!</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-guide-pip-tip">
+            <i data-lucide="picture-in-picture-2"></i>
+            <div>
+              <strong>치트키: [화면 속 화면 (PIP)] 켜두기</strong>
+              <p>플레이어 상단 PIP 버튼을 누르면 안드로이드 플로팅 창이 뜨며 화면 꺼짐 및 홈 이동 시에도 100% 끊김 없이 재생됩니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-guide-footer">
+          <button class="bg-guide-action-btn" id="btn-bg-guide-test-pip">
+            <i data-lucide="picture-in-picture-2"></i>
+            <span>시스템 PIP(화면 속 화면) 켜기</span>
+          </button>
+          <button class="bg-guide-confirm-btn" id="btn-bg-guide-confirm">확인 완료</button>
         </div>
       </div>
     </div>
