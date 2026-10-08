@@ -1414,12 +1414,25 @@ export class UIManager {
     const likeCountEl = document.getElementById('pill-like-count');
     const commentCountEl = document.getElementById('pill-comment-count');
     const barLikeCountEl = document.getElementById('player-bar-like-count');
+    const barCommentCountEl = document.getElementById('player-bar-comment-count');
+    const modalLikeCountEl = document.getElementById('modal-like-count');
     const sheetCount = document.getElementById('comments-sheet-total-count');
 
     if (!videoId) {
       if (likeCountEl) likeCountEl.textContent = '좋아요';
-      if (barLikeCountEl) barLikeCountEl.style.display = 'none';
+      if (modalLikeCountEl) {
+        modalLikeCountEl.textContent = '';
+        modalLikeCountEl.style.display = 'none';
+      }
+      if (barLikeCountEl) {
+        barLikeCountEl.textContent = '';
+        barLikeCountEl.style.display = 'none';
+      }
       if (commentCountEl) commentCountEl.textContent = '댓글';
+      if (barCommentCountEl) {
+        barCommentCountEl.textContent = '';
+        barCommentCountEl.style.display = 'none';
+      }
       if (sheetCount) sheetCount.textContent = '0';
       return;
     }
@@ -1430,16 +1443,31 @@ export class UIManager {
         const data = await res.json();
         if (data.likeCount && data.likeCount !== '좋아요') {
           if (likeCountEl) likeCountEl.textContent = data.likeCount;
+          if (modalLikeCountEl) {
+            modalLikeCountEl.textContent = data.likeCount;
+            modalLikeCountEl.style.display = 'inline-block';
+          }
           if (barLikeCountEl) {
             barLikeCountEl.textContent = data.likeCount;
             barLikeCountEl.style.display = 'inline-block';
           }
         } else {
           if (likeCountEl) likeCountEl.textContent = '좋아요';
+          if (modalLikeCountEl) modalLikeCountEl.style.display = 'none';
           if (barLikeCountEl) barLikeCountEl.style.display = 'none';
         }
-        if (commentCountEl && data.commentCount) commentCountEl.textContent = data.commentCount;
-        if (sheetCount && data.commentCount) sheetCount.textContent = data.commentCount;
+
+        if (data.commentCount && data.commentCount !== '댓글') {
+          if (commentCountEl) commentCountEl.textContent = data.commentCount;
+          if (barCommentCountEl) {
+            barCommentCountEl.textContent = data.commentCount;
+            barCommentCountEl.style.display = 'inline-block';
+          }
+          if (sheetCount) sheetCount.textContent = data.commentCount;
+        } else {
+          if (commentCountEl) commentCountEl.textContent = '댓글';
+          if (barCommentCountEl) barCommentCountEl.style.display = 'none';
+        }
       }
     } catch (e) {
       console.warn("Video details load error:", e);
@@ -1496,8 +1524,13 @@ export class UIManager {
         if (data.commentCount) {
           const sheetCount = document.getElementById('comments-sheet-total-count');
           const pillCount = document.getElementById('pill-comment-count');
+          const barCommentCount = document.getElementById('player-bar-comment-count');
           if (sheetCount) sheetCount.textContent = data.commentCount;
           if (pillCount) pillCount.textContent = data.commentCount;
+          if (barCommentCount) {
+            barCommentCount.textContent = data.commentCount;
+            barCommentCount.style.display = 'inline-block';
+          }
         }
       } else {
         if (list) list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">댓글을 불러오지 못했습니다.</p>';

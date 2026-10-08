@@ -2169,6 +2169,19 @@ function initApp() {
     });
   }
 
+  // 플레이어 바 댓글 버튼 클릭 시에도 실시간 댓글 바텀시트 즉시 오픈
+  const btnPlayerComment = document.getElementById('btn-player-comment');
+  if (btnPlayerComment) {
+    btnPlayerComment.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = player.getCurrentTrack();
+      if (cur) {
+        const vid = cur.videoId || (cur.id && typeof cur.id === 'string' ? cur.id.replace(/^yt-/, '') : null);
+        ui.openCommentsSheet(vid, 'top');
+      }
+    });
+  }
+
   const btnPillSave = document.getElementById('btn-pill-save');
   if (btnPillSave) {
     btnPillSave.addEventListener('click', () => {
@@ -2188,6 +2201,21 @@ function initApp() {
   };
   if (btnCloseComments) btnCloseComments.addEventListener('click', closeCommentsSheet);
   if (commentsBackdrop) commentsBackdrop.addEventListener('click', closeCommentsSheet);
+
+  // 모바일 댓글 바텀시트 드래그 핸들 아래로 쓸어내려 닫기 터치 제스처
+  const commentsDragHandle = document.querySelector('.comments-sheet-drag-handle');
+  if (commentsDragHandle && commentsModal) {
+    let startY = 0;
+    commentsDragHandle.addEventListener('touchstart', (e) => {
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+    commentsDragHandle.addEventListener('touchend', (e) => {
+      const diffY = e.changedTouches[0].clientY - startY;
+      if (diffY > 50) {
+        closeCommentsSheet();
+      }
+    }, { passive: true });
+  }
 
   const btnCommentsTop = document.getElementById('btn-comments-sort-top');
   const btnCommentsNew = document.getElementById('btn-comments-sort-new');

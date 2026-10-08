@@ -85,6 +85,7 @@ export class AudioPlayer {
                   // 사용자가 정지하지 않았는데 일시정지(State 2) 발생 = 모바일 화면 꺼짐, 홈 이동, 브라우저 비디오 스로틀링!
                   // isPlaying 상태를 절대 해제하지 않고, 백그라운드 재생 엔진을 즉각 가동하여 무중단 재개!
                   this.isPlaying = true;
+                  this.ensureSilentAnchorRunning();
                   this.startBgKeepAlive();
                   this.syncMediaSessionPlaybackState();
                   this.forceResumePlayback();
@@ -131,25 +132,29 @@ export class AudioPlayer {
     this.audio.volume = this.volume;
 
     this.audio.addEventListener('play', () => {
-      this.isPlaying = true;
-      this.isUserPaused = false;
-      this.startBgKeepAlive();
-      this.syncMediaSessionPlaybackState();
-      if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
+      if (this.isCurrentLocal()) {
+        this.isPlaying = true;
+        this.isUserPaused = false;
+        this.startBgKeepAlive();
+        this.syncMediaSessionPlaybackState();
+        if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
+      }
     });
 
     this.audio.addEventListener('pause', () => {
-      if (this.isUserPaused) {
-        this.isPlaying = false;
-        this.stopBgKeepAlive();
-        this.syncMediaSessionPlaybackState();
-        if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
-      } else {
-        // 백그라운드 비자발적 pause 방어
-        this.isPlaying = true;
-        this.startBgKeepAlive();
-        this.syncMediaSessionPlaybackState();
-        try { this.audio.play(); } catch (e) {}
+      if (this.isCurrentLocal()) {
+        if (this.isUserPaused) {
+          this.isPlaying = false;
+          this.stopBgKeepAlive();
+          this.syncMediaSessionPlaybackState();
+          if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+        } else {
+          // 백그라운드 비자발적 pause 방어
+          this.isPlaying = true;
+          this.startBgKeepAlive();
+          this.syncMediaSessionPlaybackState();
+          try { this.audio.play(); } catch (e) {}
+        }
       }
     });
 
@@ -346,9 +351,32 @@ export class AudioPlayer {
     }
   }
 
+  // 모바일 OS 사운드 포커스 & 백그라운드 WakeLock 앵커 가동
+  ensureSilentAnchorRunning() {
+    if (!this.isPlaying || this.isUserPaused) return;
+    if (this.isCurrentLocal()) return;
+
+    try {
+      if (!this.audio.src || !this.audio.src.startsWith('data:audio/wav')) {
+        // 1초 무음 WAV Base64 데이터 URI (네트워크 트래픽 0, 배터리 소모 0)
+        this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        this.audio.loop = true;
+      }
+      this.audio.volume = 0.001; // 비가청 초미세 볼륨 (시스템 오디오 파이프라인 상시 개방)
+      if (this.audio.paused) {
+        const p = this.audio.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {});
+        }
+      }
+    } catch (e) {}
+  }
+
   // 백그라운드 상태에서 유튜브 플레이어 상태 지속 감시 및 재생 유지
   keepPlaybackAlive() {
     if (!this.isPlaying || this.isUserPaused) return;
+
+    this.ensureSilentAnchorRunning();
 
     if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
       try {
@@ -362,10 +390,20 @@ export class AudioPlayer {
     }
   }
 
-  // 화면 꺼짐 직후 비자발적 정지 발생 시 연속 복구 펄스 발사
+  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개 (무한 재귀 폭풍 방지)
   forceResumePlayback() {
-    if (this.isUserPaused) return;
+    if (this.isUserPaused || !this.isPlaying) return;
 
+    const now = Date.now();
+    if (this._lastResumeAttempt && (now - this._lastResumeAttempt) < 1000) {
+      return; // 1초 쿨다운 적용으로 무한 루프 폭풍 원천 차단
+    }
+    this._lastResumeAttempt = now;
+
+    // 1. 최상위 OS 오디오 앵커 확실히 재가동
+    this.ensureSilentAnchorRunning();
+
+    // 2. YouTube 플레이어 1회 정밀 재생 재개
     if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
       try {
         this.ytPlayer.playVideo();
@@ -373,20 +411,22 @@ export class AudioPlayer {
       } catch (e) {}
     }
 
-    [15, 60, 180, 450, 1000].forEach(delay => {
-      setTimeout(() => {
-        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
-          const state = this.ytPlayer.getPlayerState();
-          if (state !== 1 && state !== 3) {
-            try { this.ytPlayer.playVideo(); } catch (e) {}
-          }
-          this.ensureAudioSound();
+    setTimeout(() => {
+      if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+        const state = this.ytPlayer.getPlayerState();
+        if (state !== 1 && state !== 3) {
+          try {
+            this.ytPlayer.playVideo();
+            this.ensureAudioSound();
+          } catch (e) {}
         }
-      }, delay);
-    });
+      }
+    }, 250);
   }
 
   startBgKeepAlive() {
+    this.ensureSilentAnchorRunning();
+
     if (this.bgKeepAliveAudio) {
       this.bgKeepAliveAudio.play().catch(() => {});
     }
@@ -399,6 +439,9 @@ export class AudioPlayer {
   }
 
   stopBgKeepAlive() {
+    if (!this.isCurrentLocal() && this.audio) {
+      this.audio.pause();
+    }
     if (this.bgKeepAliveAudio) {
       this.bgKeepAliveAudio.pause();
     }
