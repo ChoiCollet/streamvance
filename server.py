@@ -185,13 +185,17 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         comment_str = None
         comment_raw = 0
 
-        # 1차: YouTube InnerTube Next API 호출 (실시간 좋아요 수 정확 파싱)
+        # 1차: YouTube InnerTube Next API 호출 (실시간 좋아요 수 및 댓글 수 파싱)
         try:
             payload = json.dumps({
-                'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'ko', 'gl': 'KR'}},
+                'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240401.01.00', 'hl': 'ko', 'gl': 'KR'}},
                 'videoId': video_id
             }).encode('utf-8')
-            req = urllib.request.Request('https://www.youtube.com/youtubei/v1/next', data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(
+                'https://www.youtube.com/youtubei/v1/next',
+                data=payload,
+                headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            )
             with urllib.request.urlopen(req, timeout=4) as r:
                 d = json.loads(r.read().decode('utf-8', errors='ignore'))
                 s = json.dumps(d, ensure_ascii=False)
@@ -206,16 +210,21 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                     if m_txt:
                         like_raw = int(m_txt.group(1).replace(',', ''))
                         like_str = self.format_count_ko(like_raw)
+
+                # 댓글 수 파싱
+                m_cmt = re.search(r'댓글\s*([0-9,만천억.]+)\s*개', s)
+                if m_cmt:
+                    comment_str = m_cmt.group(1)
         except Exception:
             pass
 
-        # 2차: Invidious 미러 폴백
+        # 2차: Invidious 미러 폴백 (보조)
         if not like_str:
             for inst in self.INVIDIOUS_MIRRORS:
                 try:
                     url = f"{inst}/api/v1/videos/{video_id}"
                     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=3) as r:
+                    with urllib.request.urlopen(req, timeout=2.5) as r:
                         vdata = json.loads(r.read().decode('utf-8', errors='ignore'))
                         if 'likeCount' in vdata:
                             like_raw = int(vdata['likeCount'])
@@ -223,12 +232,6 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                             break
                 except Exception:
                     pass
-
-        # 댓글 수 파싱 보조
-        c_info = self.fetch_youtube_comments(video_id, 'top')
-        if c_info and c_info.get('commentCount'):
-            comment_str = c_info['commentCount']
-            comment_raw = c_info.get('rawCommentCount', 0)
 
         result = {
             'videoId': video_id,
@@ -245,12 +248,152 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         if cache_key in self.COMMENTS_CACHE:
             return self.COMMENTS_CACHE[cache_key]
 
+        # 1. YouTube InnerTube API 직접 호출 (안정적 1순위)
+        try:
+            payload_init = json.dumps({
+                'context': {
+                    'client': {'clientName': 'WEB', 'clientVersion': '2.20240401.01.00', 'hl': 'ko', 'gl': 'KR'}
+                },
+                'videoId': video_id
+            }).encode('utf-8')
+
+            req_init = urllib.request.Request(
+                'https://www.youtube.com/youtubei/v1/next',
+                data=payload_init,
+                headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            )
+
+            with urllib.request.urlopen(req_init, timeout=5) as r:
+                init_data = json.loads(r.read().decode('utf-8', errors='ignore'))
+
+            top_token = None
+            new_token = None
+            comment_count_str = '0'
+
+            # A. engagementPanels 에서 정렬 토큰 및 댓글 수 탐색
+            panels = init_data.get('engagementPanels', [])
+            for p in panels:
+                hdr = p.get('engagementPanelSectionListRenderer', {}).get('header', {})
+                th = hdr.get('engagementPanelTitleHeaderRenderer', {})
+                ctx = th.get('contextualInfo', {}).get('runs', [{}])[0].get('text', '')
+                if ctx:
+                    comment_count_str = ctx
+                submenu = th.get('menu', {}).get('sortFilterSubMenuRenderer', {}).get('subMenuItems', [])
+                if submenu:
+                    top_token = submenu[0].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                    if len(submenu) > 1:
+                        new_token = submenu[1].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                    break
+
+            # B. contents itemSectionRenderer 에서 정렬 토큰 및 댓글 수 탐색
+            if not top_token:
+                for section in init_data.get('contents', {}).get('twoColumnWatchNextResults', {}).get('results', {}).get('results', {}).get('contents', []):
+                    isr = section.get('itemSectionRenderer', {})
+                    header = isr.get('header', {}).get('commentsHeaderRenderer', {})
+                    if header:
+                        count_runs = header.get('countText', {}).get('runs', [])
+                        if count_runs:
+                            comment_count_str = count_runs[0].get('text', comment_count_str)
+                        sort_menu = header.get('sortMenu', {}).get('sortFilterSubMenuRenderer', {}).get('subMenuItems', [])
+                        if sort_menu:
+                            top_token = sort_menu[0].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                            if len(sort_menu) > 1:
+                                new_token = sort_menu[1].get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                    contents = isr.get('contents', [])
+                    for c in contents:
+                        cir = c.get('continuationItemRenderer', {})
+                        cmd = cir.get('continuationEndpoint', {}).get('continuationCommand', {})
+                        if cmd.get('token') and not top_token:
+                            top_token = cmd.get('token')
+                            break
+
+            target_token = new_token if (sort == 'new' and new_token) else top_token
+            if target_token:
+                payload_cont = json.dumps({
+                    'context': {
+                        'client': {'clientName': 'WEB', 'clientVersion': '2.20240401.01.00', 'hl': 'ko', 'gl': 'KR'}
+                    },
+                    'continuation': target_token
+                }).encode('utf-8')
+
+                req_cont = urllib.request.Request(
+                    'https://www.youtube.com/youtubei/v1/next',
+                    data=payload_cont,
+                    headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                )
+
+                with urllib.request.urlopen(req_cont, timeout=6) as cr:
+                    cont_data = json.loads(cr.read().decode('utf-8', errors='ignore'))
+
+                comments = []
+                # 1순위: Mutations (YouTube 최신 Entity 모델)
+                mutations = cont_data.get('frameworkUpdates', {}).get('entityBatchUpdate', {}).get('mutations', [])
+                for m in mutations:
+                    payload = m.get('payload', {})
+                    c_entity = payload.get('commentEntityPayload', {})
+                    if c_entity:
+                        author = c_entity.get('author', {}).get('displayName', '')
+                        avatar = c_entity.get('author', {}).get('avatarThumbnailUrl', '')
+                        content = c_entity.get('properties', {}).get('content', {}).get('content', '')
+                        published = c_entity.get('properties', {}).get('publishedTime', '')
+                        like_count = c_entity.get('toolbar', {}).get('likeCountNotliked', '0')
+                        reply_count = c_entity.get('toolbar', {}).get('replyCount', 0)
+                        if author and content:
+                            comments.append({
+                                'author': author,
+                                'avatar': avatar,
+                                'content': content,
+                                'publishedText': published,
+                                'likeCount': str(like_count),
+                                'replyCount': reply_count
+                            })
+
+                # 2순위: commentRenderer / commentViewModel 전통 방식
+                if not comments:
+                    for ep in cont_data.get('onResponseReceivedEndpoints', []):
+                        actions = ep.get('reloadContinuationItemsCommand', {}).get('continuationItems', []) or \
+                                  ep.get('appendContinuationItemsAction', {}).get('continuationItems', [])
+                        for item in actions:
+                            ctr = item.get('commentThreadRenderer', {})
+                            if not ctr:
+                                continue
+                            cr = ctr.get('comment', {}).get('commentRenderer', {})
+                            if cr:
+                                author = cr.get('authorText', {}).get('simpleText', '')
+                                thumbs = cr.get('authorThumbnail', {}).get('thumbnails', [])
+                                avatar = thumbs[-1].get('url', '') if thumbs else ''
+                                content_runs = cr.get('contentText', {}).get('runs', [])
+                                content = ''.join([r.get('text', '') for r in content_runs])
+                                published = cr.get('publishedTimeText', {}).get('runs', [{}])[0].get('text', '')
+                                like_count = cr.get('voteCount', {}).get('simpleText', '0')
+                                reply_count = ctr.get('replies', {}).get('commentRepliesRenderer', {}).get('viewReplies', {}).get('buttonRenderer', {}).get('text', {}).get('runs', [{}])[0].get('text', 0)
+                                comments.append({
+                                    'author': author,
+                                    'avatar': avatar,
+                                    'content': content,
+                                    'publishedText': published,
+                                    'likeCount': str(like_count),
+                                    'replyCount': reply_count
+                                })
+
+                clean_count = re.sub(r'[^0-9만천억,.]', '', comment_count_str).strip() or str(len(comments))
+                if comments:
+                    res = {
+                        'commentCount': clean_count,
+                        'comments': comments[:50]
+                    }
+                    self.COMMENTS_CACHE[cache_key] = res
+                    return res
+        except Exception as e:
+            print(f"InnerTube comments error: {e}", file=sys.stderr)
+
+        # 2. 보조 Invidious 미러 폴백 (비상용)
         sort_param = 'top' if sort == 'top' else 'new'
         for inst in self.INVIDIOUS_MIRRORS:
             try:
                 url = f"{inst}/api/v1/comments/{video_id}?sort_by={sort_param}"
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=4) as resp:
+                with urllib.request.urlopen(req, timeout=3.5) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                     raw_comments = data.get('comments', [])
                     formatted_comments = []
@@ -261,25 +404,23 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                             avatar = 'https:' + avatar
                         formatted_comments.append({
                             'author': c.get('author', ''),
-                            'authorId': c.get('authorId', ''),
                             'avatar': avatar,
                             'publishedText': c.get('publishedText', ''),
                             'content': c.get('content', ''),
                             'likeCount': self.format_count_ko(c.get('likeCount', 0)),
-                            'rawLikeCount': c.get('likeCount', 0),
                             'replyCount': c.get('replyCount', 0)
                         })
-                    res = {
-                        'commentCount': self.format_count_ko(data.get('commentCount', len(formatted_comments))),
-                        'rawCommentCount': data.get('commentCount', len(formatted_comments)),
-                        'comments': formatted_comments
-                    }
-                    self.COMMENTS_CACHE[cache_key] = res
-                    return res
+                    if formatted_comments:
+                        res = {
+                            'commentCount': self.format_count_ko(data.get('commentCount', len(formatted_comments))),
+                            'comments': formatted_comments
+                        }
+                        self.COMMENTS_CACHE[cache_key] = res
+                        return res
             except Exception:
                 continue
 
-        return {'commentCount': '0', 'rawCommentCount': 0, 'comments': []}
+        return {'commentCount': '0', 'comments': []}
 
     def music_score(self, title, channel, duration_sec, target_artist='', raw_query=''):
         score = 0

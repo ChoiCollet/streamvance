@@ -1453,7 +1453,7 @@ export class UIManager {
 
     const loading = document.getElementById('comments-loading');
     const list = document.getElementById('comments-items-list');
-    if (loading) loading.style.display = 'block';
+    if (loading) loading.style.display = 'flex';
     if (list) list.innerHTML = '';
 
     if (!videoId) {
@@ -1481,6 +1481,92 @@ export class UIManager {
       if (loading) loading.style.display = 'none';
       if (list) list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px 0;">댓글을 불러오는 중 오류가 발생했습니다.</p>';
     }
+  }
+
+  // 모바일 Pull-to-Refresh 당겨서 새로고침 제스처 바인딩 (YouTube Music UI 일치)
+  initPullToRefresh(onRefresh) {
+    const bar = document.getElementById('pull-to-refresh-bar');
+    const icon = document.getElementById('pull-refresh-icon');
+    const scrollContainer = document.getElementById('content-scroll-area');
+    if (!bar || !icon || !scrollContainer) return;
+
+    let startY = 0;
+    let isPulling = false;
+    let isRefreshing = false;
+    let pullDistance = 0;
+    const threshold = 55;
+
+    const onTouchStart = (e) => {
+      if (isRefreshing) return;
+      if (scrollContainer.scrollTop <= 2 && window.scrollY <= 2) {
+        startY = e.touches[0].pageY;
+        isPulling = true;
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (!isPulling || isRefreshing) return;
+      const currentY = e.touches[0].pageY;
+      const diff = currentY - startY;
+
+      if (diff > 0 && scrollContainer.scrollTop <= 2) {
+        pullDistance = Math.min(80, diff * 0.45);
+        bar.classList.add('pulling');
+        bar.style.height = `${pullDistance}px`;
+        bar.style.opacity = `${Math.min(1, pullDistance / 35)}`;
+        bar.style.transform = `translateY(${Math.min(0, pullDistance - 45)}px)`;
+        icon.style.transform = `rotate(${pullDistance * 4.5}deg)`;
+        if (e.cancelable && diff > 10) {
+          e.preventDefault();
+        }
+      } else {
+        isPulling = false;
+        bar.classList.remove('pulling');
+        bar.style.height = '0px';
+      }
+    };
+
+    const onTouchEnd = async () => {
+      if (!isPulling || isRefreshing) return;
+      isPulling = false;
+      bar.classList.remove('pulling');
+
+      if (pullDistance >= threshold) {
+        isRefreshing = true;
+        bar.classList.add('refreshing');
+        bar.style.height = '52px';
+        bar.style.opacity = '1';
+        bar.style.transform = 'translateY(0)';
+
+        try {
+          if (typeof onRefresh === 'function') {
+            await onRefresh();
+          }
+        } catch (err) {
+          console.warn("Pull-to-refresh error:", err);
+        }
+
+        setTimeout(() => {
+          bar.classList.remove('refreshing');
+          bar.style.height = '0px';
+          bar.style.opacity = '0';
+          bar.style.transform = 'translateY(-20px)';
+          icon.style.transform = 'rotate(0deg)';
+          isRefreshing = false;
+          this.showToast('최신 음악 피드를 새로고침했습니다.');
+        }, 600);
+      } else {
+        bar.style.height = '0px';
+        bar.style.opacity = '0';
+        bar.style.transform = 'translateY(-20px)';
+        icon.style.transform = 'rotate(0deg)';
+      }
+      pullDistance = 0;
+    };
+
+    scrollContainer.addEventListener('touchstart', onTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+    scrollContainer.addEventListener('touchend', onTouchEnd, { passive: true });
   }
 
   renderCommentsList(comments) {

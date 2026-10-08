@@ -2957,6 +2957,25 @@ function initApp() {
     }
   });
 
+  // 16. 모바일 Pull-to-Refresh 당겨서 새로고침 연동 (YouTube Music 실시간 피드 갱신)
+  ui.initPullToRefresh(async () => {
+    updatePersonalizedQuickPicks();
+    if (ui.currentView === 'home') {
+      try {
+        const res = await fetch('/api/charts');
+        if (res.ok) {
+          const freshCharts = await res.json();
+          if (freshCharts && freshCharts.length > 0) {
+            ui.renderTopCharts(freshCharts.slice(0, 10));
+          }
+        }
+      } catch (e) {}
+    } else if (ui.currentView === 'library') {
+      ui.renderLibrary(ui.currentLibTab || 'playlists');
+    }
+    if (window.lucide) window.lucide.createIcons();
+  });
+
   // Lucide Icons 초기 렌더링
   if (window.lucide) {
     window.lucide.createIcons();

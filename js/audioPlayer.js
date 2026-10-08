@@ -67,19 +67,24 @@ export class AudioPlayer {
                 this.syncMediaSessionPlaybackState();
                 if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
               } else if (event.data === 2) {
-                // 모바일 백그라운드 전환 가드: 무한 재시도 루프로 인한 사운드 끊김 및 노티 폭주 방지
+                // 모바일 백그라운드 전환 가드: 화면 꺼짐 및 홈 이동 시 유튜브 자체 강제 일시정지 즉시 방어
                 if (typeof document !== 'undefined' && document.hidden && !this.isUserPaused) {
                   this.startBgKeepAlive();
                   this.syncMediaSessionPlaybackState();
-                  if (!this._bgResumeAttempted) {
-                    this._bgResumeAttempted = true;
-                    setTimeout(() => {
-                      if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+                  // 즉각 자동 재개 (모바일 화면 꺼짐 시 일시정지 방어)
+                  setTimeout(() => {
+                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+                      try { this.ytPlayer.playVideo(); } catch (e) {}
+                    }
+                  }, 120);
+                  // 2차 백업 재개
+                  setTimeout(() => {
+                    if (!this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+                      if (this.ytPlayer.getPlayerState() !== 1) {
                         try { this.ytPlayer.playVideo(); } catch (e) {}
                       }
-                      setTimeout(() => { this._bgResumeAttempted = false; }, 3000);
-                    }, 300);
-                  }
+                    }
+                  }, 600);
                 } else {
                   this.isPlaying = false;
                   this.stopProgressSync();
@@ -167,11 +172,26 @@ export class AudioPlayer {
     });
   }
 
-  // 1. 모바일 백그라운드 재생 지속 엔진 (삼성인터넷, 크롬 모바일 화면 꺼짐 시 자동 정지 방지)
+  // 1. 모바일 백그라운드 재생 완벽 우회 엔진 (삼성인터넷, 크롬 모바일 화면 꺼짐 시 자동 정지 원천 무력화)
   initBgKeepAlive() {
+    // [우회 1단계: Page Visibility API 전역 스푸핑]
+    // 유튜브 iframe 및 내장 스크립트가 화면 꺼짐 / 탭 백그라운드를 감지하지 못하도록 가짜 포그라운드 상태 유지
     try {
-      // 1초 무음 WAV 생성 (모바일 OS가 오디오 스트림으로 확실히 인식)
-      // RIFF header + 1 second 44.1kHz 16-bit mono silence
+      Object.defineProperty(document, 'hidden', {
+        get: () => false,
+        configurable: true
+      });
+      Object.defineProperty(document, 'visibilityState', {
+        get: () => 'visible',
+        configurable: true
+      });
+    } catch (e) {
+      console.warn("Visibility spoofing warning:", e);
+    }
+
+    try {
+      // [우회 2단계: 모바일 OS 오디오 하드웨어 앵커 생성]
+      // 1초 무음 WAV 생성 (삼성인터넷 백그라운드 재생 프로세스 강제 트리거)
       const sampleRate = 44100;
       const numSamples = sampleRate; // 1 second
       const buffer = new ArrayBuffer(44 + numSamples * 2);
@@ -194,30 +214,74 @@ export class AudioPlayer {
       view.setUint16(34, 16, true);
       writeString(36, 'data');
       view.setUint32(40, numSamples * 2, true);
-      // Samples are already 0 (silence)
 
       const blob = new Blob([buffer], { type: 'audio/wav' });
       this.bgKeepAliveAudio = new Audio(URL.createObjectURL(blob));
       this.bgKeepAliveAudio.loop = true;
-      this.bgKeepAliveAudio.volume = 0.01;
+      this.bgKeepAliveAudio.volume = 0.05;
+
+      // [우회 3단계: 하드웨어 오디오 클록(Hardware Audio Clock) 기반 무중단 재개 루프]
+      // timeupdate 이벤트는 화면이 꺼지거나 백그라운드로 전환되어도 모바일 OS 사운드 칩셋의 하드웨어 타이머로 계속 작동함
+      // 백그라운드에서 유튜브가 일시정지(State 2)를 시도하는 즉시 0.2초 내에 playVideo()를 강제 재실행!
+      this.bgKeepAliveAudio.addEventListener('timeupdate', () => {
+        if (this.isPlaying && !this.isUserPaused && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+          const state = this.ytPlayer.getPlayerState();
+          // YT.PlayerState: PLAYING = 1, BUFFERING = 3
+          if (state !== 1 && state !== 3) {
+            try {
+              this.ytPlayer.playVideo();
+            } catch (e) {}
+          }
+        }
+      });
     } catch (e) {
       console.warn("Bg keepalive init error:", e);
     }
 
-    // 모바일 탭 백그라운드 전환 및 화면 꺼짐 감지 시 재생 유지 가드
+    // [우회 4단계: Web Audio API 초저음 펄스 앵커]
+    // 삼성인터넷/안드로이드 AudioFlinger에 액티브 오디오 세션 등록
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.webAudioCtx = new AudioCtx();
+        const osc = this.webAudioCtx.createOscillator();
+        const gain = this.webAudioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(20, this.webAudioCtx.currentTime); // 귀에 안들리는 초저음(20Hz)
+        gain.gain.setValueAtTime(0.001, this.webAudioCtx.currentTime); // 사실상 무음
+        osc.connect(gain);
+        gain.connect(this.webAudioCtx.destination);
+        osc.start();
+      }
+    } catch (e) {}
+
+    // 모바일 탭 백그라운드 전환 및 화면 꺼짐 감지 시 즉각 방어 가드
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        if (this.isPlaying) {
+      const handleBackgroundTransition = () => {
+        if (this.isPlaying && !this.isUserPaused) {
           this.startBgKeepAlive();
           this.syncMediaSessionPlaybackState();
+          if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+            this.webAudioCtx.resume().catch(() => {});
+          }
+          if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+            try { this.ytPlayer.playVideo(); } catch (e) {}
+          }
         }
-      });
+      };
+
+      document.addEventListener('visibilitychange', handleBackgroundTransition, true);
+      window.addEventListener('pagehide', handleBackgroundTransition);
+      window.addEventListener('blur', handleBackgroundTransition);
     }
   }
 
   startBgKeepAlive() {
     if (this.bgKeepAliveAudio) {
       this.bgKeepAliveAudio.play().catch(() => {});
+    }
+    if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+      this.webAudioCtx.resume().catch(() => {});
     }
   }
 
