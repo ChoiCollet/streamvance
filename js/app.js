@@ -28,6 +28,7 @@ function initApp() {
   let allTracks = [...sampleTracks];
   let currentMood = 'all';
   auth.setAllTracks(allTracks);
+  window.allTracks = allTracks;
   ui.updateOfflineBadgeCount();
 
   // 대기열 순서 변경 이벤트 연동
@@ -2163,7 +2164,16 @@ function initApp() {
     btnPillComment.addEventListener('click', () => {
       const cur = player.getCurrentTrack();
       if (cur) {
-        const vid = cur.videoId || (cur.id && typeof cur.id === 'string' ? cur.id.replace(/^yt-/, '') : null);
+        let vid = cur.videoId;
+        if (!vid && cur.id) {
+          if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+            const found = window.allTracks.find(t => t.id === cur.id);
+            if (found && found.videoId) vid = found.videoId;
+          }
+          if (!vid && typeof cur.id === 'string') {
+            vid = cur.id.replace(/^yt-/, '');
+          }
+        }
         ui.openCommentsSheet(vid, 'top');
       }
     });
@@ -2176,7 +2186,16 @@ function initApp() {
       e.stopPropagation();
       const cur = player.getCurrentTrack();
       if (cur) {
-        const vid = cur.videoId || (cur.id && typeof cur.id === 'string' ? cur.id.replace(/^yt-/, '') : null);
+        let vid = cur.videoId;
+        if (!vid && cur.id) {
+          if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+            const found = window.allTracks.find(t => t.id === cur.id);
+            if (found && found.videoId) vid = found.videoId;
+          }
+          if (!vid && typeof cur.id === 'string') {
+            vid = cur.id.replace(/^yt-/, '');
+          }
+        }
         ui.openCommentsSheet(vid, 'top');
       }
     });
@@ -2188,6 +2207,40 @@ function initApp() {
       const cur = player.getCurrentTrack();
       if (cur) {
         openTrackMoreSheet(cur);
+      }
+    });
+  }
+
+  // 4) OLED 화면 끄기 / 절전 슬립 모드 (화면 꺼짐 시 음악 유지용)
+  const btnSleepMode = document.getElementById('btn-modal-sleep-mode');
+  const oledOverlay = document.getElementById('oled-sleep-overlay');
+  const oledTrackName = document.getElementById('oled-sleep-track-name');
+
+  if (btnSleepMode && oledOverlay) {
+    btnSleepMode.addEventListener('click', () => {
+      const cur = player.getCurrentTrack();
+      if (oledTrackName && cur) {
+        oledTrackName.textContent = `${cur.title} - ${cur.artist}`;
+      }
+      oledOverlay.style.display = 'flex';
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').catch(() => {});
+      }
+    });
+
+    let lastTap = 0;
+    oledOverlay.addEventListener('click', () => {
+      const now = Date.now();
+      if (now - lastTap < 400) {
+        // 더블 탭 시 해제
+        oledOverlay.style.display = 'none';
+      } else {
+        lastTap = now;
+        const hint = oledOverlay.querySelector('.oled-sleep-hint');
+        if (hint) {
+          hint.style.color = '#fff';
+          setTimeout(() => { hint.style.color = '#777'; }, 800);
+        }
       }
     });
   }

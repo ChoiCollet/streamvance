@@ -354,20 +354,23 @@ export class AudioPlayer {
   // 모바일 OS 사운드 포커스 & 백그라운드 WakeLock 앵커 가동
   ensureSilentAnchorRunning() {
     if (!this.isPlaying || this.isUserPaused) return;
-    if (this.isCurrentLocal()) return;
 
+    // 1. Web Audio API 엔진 언락 및 가동 (유튜브 오디오 포커스를 방해하지 않고 오디오 서브시스템 활성 유지)
     try {
-      if (!this.audio.src || !this.audio.src.startsWith('data:audio/wav')) {
-        // 1초 무음 WAV Base64 데이터 URI (네트워크 트래픽 0, 배터리 소모 0)
-        this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-        this.audio.loop = true;
+      if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+        this.webAudioCtx.resume().catch(() => {});
       }
-      this.audio.volume = 0.001; // 비가청 초미세 볼륨 (시스템 오디오 파이프라인 상시 개방)
-      if (this.audio.paused) {
-        const p = this.audio.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(() => {});
-        }
+    } catch (e) {}
+
+    // 2. 화면 WakeLock 획득
+    try {
+      if ('wakeLock' in navigator && !this._wakeLock) {
+        navigator.wakeLock.request('screen').then(lock => {
+          this._wakeLock = lock;
+          lock.addEventListener('release', () => {
+            this._wakeLock = null;
+          });
+        }).catch(() => {});
       }
     } catch (e) {}
   }
@@ -427,9 +430,6 @@ export class AudioPlayer {
   startBgKeepAlive() {
     this.ensureSilentAnchorRunning();
 
-    if (this.bgKeepAliveAudio) {
-      this.bgKeepAliveAudio.play().catch(() => {});
-    }
     if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
       this.webAudioCtx.resume().catch(() => {});
     }
@@ -442,8 +442,9 @@ export class AudioPlayer {
     if (!this.isCurrentLocal() && this.audio) {
       this.audio.pause();
     }
-    if (this.bgKeepAliveAudio) {
-      this.bgKeepAliveAudio.pause();
+    if (this._wakeLock) {
+      try { this._wakeLock.release(); } catch (e) {}
+      this._wakeLock = null;
     }
     if (this.bgPulseWorker) {
       try { this.bgPulseWorker.postMessage('stop'); } catch (e) {}
@@ -619,8 +620,14 @@ export class AudioPlayer {
     if (!track) return;
 
     // videoId 정규화 (yt- 접두어 제거 및 기본값 보장)
-    if (!track.videoId && track.id && typeof track.id === 'string' && !track.audioUrl) {
-      track.videoId = track.id.replace(/^yt-/, '');
+    if (!track.videoId && track.id) {
+      if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+        const found = window.allTracks.find(t => t.id === track.id);
+        if (found && found.videoId) track.videoId = found.videoId;
+      }
+      if (!track.videoId && typeof track.id === 'string' && !track.audioUrl) {
+        track.videoId = track.id.replace(/^yt-/, '');
+      }
     }
 
     if (this.loadRetryTimer) {

@@ -2916,35 +2916,10 @@ a {
     justify-content: space-between;
   }
 
-  .btn-modal-dislike-mobile {
-    display: inline-flex !important;
-    width: 36px;
-    height: 36px;
-    color: #aaaaaa !important;
-    border-radius: 50%;
-    align-items: center;
-    justify-content: center;
-    transition: color var(--transition-fast), background var(--transition-fast);
-  }
-
-  .btn-modal-dislike-mobile:hover {
-    color: #ffffff !important;
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .btn-modal-dislike-mobile.disliked {
-    color: #ffffff !important;
-    background: rgba(255, 255, 255, 0.22) !important;
-  }
-
-  .btn-modal-dislike-desktop {
-    display: none !important;
-  }
-
   .modal-track-titles {
     flex: 1;
-    text-align: center;
-    padding: 0 8px;
+    text-align: left;
+    padding-right: 12px;
     min-width: 0;
     overflow: hidden;
   }
@@ -6611,5 +6586,66 @@ a {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }
 }
+
+/* ==========================================================================
+   17. OLED 화면 끄기 / 절전 슬립 모드 오버레이 (화면을 끈 채로 음악 지속 재생)
+   ========================================================================== */
+.oled-sleep-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  user-select: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oled-sleep-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.35;
+  transition: opacity 0.3s;
+}
+
+.oled-sleep-overlay:hover .oled-sleep-content,
+.oled-sleep-overlay:active .oled-sleep-content {
+  opacity: 0.85;
+}
+
+.oled-sleep-title {
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+}
+
+.oled-sleep-sub {
+  color: #aaa;
+  font-size: 0.92rem;
+  margin: 0 0 16px 0;
+}
+
+.oled-sleep-hint {
+  color: #777;
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modal-like-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  margin-left: 5px;
+  display: inline-block;
+}
+
 
 

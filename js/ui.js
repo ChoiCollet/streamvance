@@ -1316,7 +1316,16 @@ export class UIManager {
     if (sheetTitle) this.applyMarqueeIfOverflow(sheetTitle);
 
     // 유튜브 실시간 좋아요 수 및 댓글 수 갱신 (사용자 요청 6번)
-    const vid = track.videoId || (track.id && typeof track.id === 'string' ? track.id.replace(/^yt-/, '') : null);
+    let vid = track.videoId;
+    if (!vid && track.id) {
+      if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+        const found = window.allTracks.find(t => t.id === track.id);
+        if (found && found.videoId) vid = found.videoId;
+      }
+      if (!vid && typeof track.id === 'string') {
+        vid = track.id.replace(/^yt-/, '');
+      }
+    }
     this.updateVideoDetails(vid);
 
     // 시청 / 감상 기록 중복 제거 및 최상단 등록 후 localStorage 영구 보관 (가사 대용량 배열 제외하여 쿼터 안전 보장)
@@ -1418,6 +1427,14 @@ export class UIManager {
     const modalLikeCountEl = document.getElementById('modal-like-count');
     const sheetCount = document.getElementById('comments-sheet-total-count');
 
+    // 커스텀 ID(track-xxx) 방어: allTracks에서 실제 유튜브 videoId 조회
+    if (videoId && (videoId.startsWith('track-') || !videoId.match(/^[a-zA-Z0-9_-]{11}$/))) {
+      if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+        const found = window.allTracks.find(t => t.id === videoId || t.videoId === videoId);
+        if (found && found.videoId) videoId = found.videoId;
+      }
+    }
+
     if (!videoId) {
       if (likeCountEl) likeCountEl.textContent = '좋아요';
       if (modalLikeCountEl) {
@@ -1479,6 +1496,14 @@ export class UIManager {
     const modal = document.getElementById('comments-sheet-modal');
     if (!modal) return;
     modal.classList.add('open');
+
+    // 커스텀 ID(track-xxx) 방어: allTracks에서 실제 유튜브 videoId 조회
+    if (videoId && (videoId.startsWith('track-') || !videoId.match(/^[a-zA-Z0-9_-]{11}$/))) {
+      if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
+        const found = window.allTracks.find(t => t.id === videoId || t.videoId === videoId);
+        if (found && found.videoId) videoId = found.videoId;
+      }
+    }
 
     this.currentCommentsVideoId = videoId;
     this.currentCommentsSort = sort;

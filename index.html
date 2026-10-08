@@ -701,6 +701,9 @@
         </div>
 
         <div class="modal-header-right-actions">
+          <button class="icon-btn-modal" id="btn-modal-sleep-mode" title="화면 끄기 (OLED 절전 슬립 모드)">
+            <i data-lucide="moon"></i>
+          </button>
           <button class="icon-btn-modal" id="btn-modal-pip" title="화면 속 화면 (PIP 미니 플레이어)">
             <i data-lucide="picture-in-picture-2"></i>
           </button>
@@ -757,22 +760,19 @@
             </div>
           </div>
 
-          <!-- 하단 트랙 정보 (모바일: [👎] [곡 정보] [👍], PC: [곡 정보] [👎 👍]) -->
+          <!-- 하단 트랙 정보 (원래대로: [곡 정보] [👎 👍]) -->
           <div class="modal-track-info-row">
-            <button class="btn-like-modal btn-modal-dislike-mobile" id="btn-modal-dislike-mobile" title="싫어요">
-              <i data-lucide="thumbs-down"></i>
-            </button>
             <div class="modal-track-titles">
               <h1 class="modal-song-title" id="modal-song-title">재생 중인 곡 없음</h1>
               <p class="modal-song-artist" id="modal-song-artist">YouTube Music</p>
             </div>
             <div class="modal-track-actions">
-              <button class="btn-like-modal btn-modal-dislike-desktop" id="btn-modal-dislike" title="싫어요">
+              <button class="btn-like-modal" id="btn-modal-dislike" title="싫어요">
                 <i data-lucide="thumbs-down"></i>
               </button>
               <button class="btn-like-modal" id="btn-like-modal" title="좋아요">
                 <i data-lucide="thumbs-up"></i>
-                <span class="modal-like-count" id="modal-like-count" style="display: none; font-size: 11px; margin-left: 5px; font-weight: 600;"></span>
+                <span class="modal-like-count" id="modal-like-count" style="display: none; font-size: 13px; margin-left: 6px; font-weight: 600;"></span>
               </button>
             </div>
           </div>
@@ -957,6 +957,16 @@
             <!-- 실시간 댓글 항목 동적 렌더링 -->
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- OLED 화면 끄기 / 슬립 절전 모드 오버레이 (화면을 끈 채로 음악 지속 재생) -->
+    <div class="oled-sleep-overlay" id="oled-sleep-overlay" style="display: none;">
+      <div class="oled-sleep-content">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: #888; margin-bottom: 12px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        <p class="oled-sleep-title">화면 절전 모드 동작 중</p>
+        <p class="oled-sleep-sub" id="oled-sleep-track-name">재생 중</p>
+        <span class="oled-sleep-hint">화면을 두 번 탭하여 깨우기</span>
       </div>
     </div>
 
