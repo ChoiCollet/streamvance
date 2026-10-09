@@ -47,10 +47,47 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(playlist_data)
             return
 
-        # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts
+        # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts?type=global|korea
         if parsed.path == '/api/charts':
-            results = self.search_youtube('2026 K-POP 인기 차트 TOP 50')
-            self.send_json(results.get('tracks', []))
+            query_params = urllib.parse.parse_qs(parsed.query)
+            chart_type = query_params.get('type', ['global'])[0].strip().lower()
+
+            # YouTube Music 공식 Top 100 차트 재생목록 ID
+            # 글로벌 인기 뮤직비디오 Top 100: PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM
+            # 한국 인기 뮤직비디오 Top 100: PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc
+            target_pid = 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc' if chart_type in ('korea', 'kpop') else 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM'
+
+            playlist_data = self.fetch_youtube_playlist(target_pid)
+            tracks = playlist_data.get('tracks', [])
+
+            # 컴필레이션, 10분 초과 믹스, 노래모음/플레이리스트 영상 엄격 배제 (정품 단일 음원만 선별)
+            clean_tracks = [
+                t for t in tracks
+                if t.get('duration', 0) <= 600 and not any(k in (t.get('title') or '').lower() for k in [
+                    'playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '연속듣기'
+                ])
+            ]
+
+            # 1차 공식 재생목록 폴백: Billboard Hot 100 공식 재생목록
+            if not clean_tracks:
+                bb_data = self.fetch_youtube_playlist('PLRXkxxi5lXuVwmF2g9_D1O7aI3L0lHkdQ')
+                clean_tracks = [
+                    t for t in bb_data.get('tracks', [])
+                    if t.get('duration', 0) <= 600 and not any(k in (t.get('title') or '').lower() for k in [
+                        'playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '연속듣기'
+                    ])
+                ]
+
+            # 2차 검색 폴백 (정품 songs 단일 음원만 엄선)
+            if not clean_tracks:
+                search_q = 'K-POP 최신 인기곡 M/V' if chart_type in ('korea', 'kpop') else 'Billboard Hot 100 official MV'
+                search_res = self.search_youtube(search_q)
+                clean_tracks = [
+                    s for s in search_res.get('songs', [])
+                    if not s.get('isCompilation') and s.get('duration', 0) <= 600
+                ]
+
+            self.send_json(clean_tracks)
             return
 
         # 유튜브 실시간 영상 메타(좋아요 수 등) API 엔드포인트: /api/video-details?id=...&videoId=...

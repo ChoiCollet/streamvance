@@ -473,7 +473,7 @@ export class UIManager {
   renderGenres(genres) {
     if (!this.dom.genreGrid) return;
     this.dom.genreGrid.innerHTML = genres.map(g => `
-      <div class="genre-card" style="background: ${g.color}; padding: 24px; border-radius: 8px; font-weight: 700; font-size: 1.1rem; cursor: pointer;" data-genre-mood="${g.mood}">
+      <div class="genre-card" style="background: ${g.color}; padding: 24px; border-radius: 8px; font-weight: 700; font-size: 1.1rem; cursor: pointer;" data-genre-id="${g.id || g.mood}" data-genre-mood="${g.mood}" data-genre-name="${g.name}">
         <span>${g.name}</span>
       </div>
     `).join('');

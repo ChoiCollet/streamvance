@@ -43,6 +43,22 @@ function initApp() {
 
   // 2. Setup Audio Player Callbacks
   player.callbacks.onTrackChange = (track, index) => {
+    if (track) {
+      try {
+        localStorage.setItem('streamvance_last_track', JSON.stringify({
+          id: track.id,
+          videoId: track.videoId,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || '',
+          duration: track.duration || 0,
+          cover: track.cover,
+          genre: track.genre || 'pop',
+          mood: track.mood || 'energy',
+          audioUrl: track.audioUrl || null
+        }));
+      } catch (e) {}
+    }
     ui.updateCurrentTrackUI(track);
     ui.renderRelated(track, allTracks);
     ui.renderQueue(player.queue, player.currentIndex);
@@ -584,8 +600,15 @@ function initApp() {
     try {
       const res = await fetch('/api/charts');
       if (res.ok) {
-        const chartTracks = await res.json();
-        if (Array.isArray(chartTracks) && chartTracks.length > 0) {
+        const rawTracks = await res.json();
+        // 8시간 믹스, 컴필레이션, 플레이리스트 모음 영상 엄격 배제 (순수 단일 음원만 선별)
+        const chartTracks = Array.isArray(rawTracks) ? rawTracks.filter(t => 
+          (!t.duration || t.duration <= 600) &&
+          !t.isCompilation &&
+          !((t.title || '').includes('플레이리스트') || (t.title || '').includes('노래모음') || (t.title || '').includes('종합차트') || (t.title || '').includes('1시간') || (t.title || '').includes('1hour'))
+        ) : [];
+
+        if (chartTracks.length > 0) {
           chartTracks.forEach(ct => {
             if (!allTracks.find(t => t.id === ct.id || t.videoId === ct.videoId)) {
               allTracks.push(ct);
@@ -593,7 +616,7 @@ function initApp() {
           });
           ui.renderTopCharts(chartTracks);
 
-          // 둘러보기 히어로 배너 GLOBAL TOP 1 동적 갱신 (사용자 요청: APT 고정 탈피 및 실시간 1위 반영)
+          // 둘러보기 히어로 배너 GLOBAL TOP 1 동적 갱신 (진짜 실시간 글로벌 1위곡 반영)
           const top1 = chartTracks[0];
           const heroBanner = document.getElementById('explore-hero-banner');
           const heroTitle = document.getElementById('explore-hero-title');
@@ -606,7 +629,13 @@ function initApp() {
               heroBanner.style.background = `linear-gradient(135deg, rgba(239, 68, 68, 0.75) 0%, rgba(20, 15, 25, 0.92) 100%), url('${bgImg}') center/cover`;
             }
             if (heroTitle) {
-              heroTitle.textContent = `${top1.artist} - ${top1.title}`;
+              const tTitle = (top1.title || '').trim();
+              const tArtist = (top1.artist || '').trim();
+              if (tArtist && !tTitle.toLowerCase().includes(tArtist.toLowerCase())) {
+                heroTitle.textContent = `${tArtist} - ${tTitle}`;
+              } else {
+                heroTitle.textContent = tTitle;
+              }
             }
             if (heroDesc) {
               heroDesc.textContent = `실시간 글로벌 인기 차트 1위를 질주 중인 '${top1.title}'을 고음질 스트리밍과 실시간 동기화 가사로 즐겨보세요.`;
@@ -701,7 +730,34 @@ function initApp() {
   // 3. Initial Queue & Data Setup
   const hasSharedTrack = handleSharedTrackFromUrl();
   if (!hasSharedTrack) {
-    player.setQueue(allTracks, 0, false);
+    // 사용자가 마지막으로 듣고 있었던 노래 복원 시도 (localStorage)
+    let restoredTrack = null;
+    try {
+      const storedLast = localStorage.getItem('streamvance_last_track');
+      if (storedLast) {
+        restoredTrack = JSON.parse(storedLast);
+      } else if (Array.isArray(ui.playHistory) && ui.playHistory.length > 0) {
+        restoredTrack = ui.playHistory[0];
+      }
+    } catch (e) {}
+
+    if (restoredTrack && (restoredTrack.videoId || restoredTrack.audioUrl)) {
+      // 마지막 청취 기록이 있는 경우: 해당 곡을 대기열 선두에 배치하여 일시정지 상태로 대기
+      const remainingTracks = allTracks.filter(t => t.id !== restoredTrack.id && t.videoId !== restoredTrack.videoId);
+      player.setQueue([restoredTrack, ...remainingTracks], 0, false);
+    } else {
+      // 첫 접속이거나 이전 청취 기록이 없는 경우: 어떤 곡도 강제로 선택하지 않음 (대기열만 구성, currentIndex는 -1)
+      player.queue = [...allTracks];
+      player.originalQueue = [...allTracks];
+      player.currentIndex = -1;
+      // UI 플레이어 바 초기 상태 유지 (선택된 곡 없음)
+      const playerTitle = document.getElementById('player-title');
+      const playerArtist = document.getElementById('player-artist');
+      const playerCover = document.getElementById('player-cover-img');
+      if (playerTitle) playerTitle.textContent = '곡을 선택해주세요';
+      if (playerArtist) playerArtist.textContent = 'YouTube Music';
+      if (playerCover) playerCover.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="%23222222"><rect width="24" height="24" rx="4"/></svg>';
+    }
   }
   ui.updateLikesCount();
 
@@ -711,7 +767,7 @@ function initApp() {
   switchSpotlightArtist(0);
   loadLiveTopCharts();
   ui.renderGenres(genresData);
-  ui.renderQueue(player.queue, 0);
+  ui.renderQueue(player.queue, player.currentIndex);
 
   // 5. Navigation Tab Switching (Top Header Tabs & Mobile - 스크린샷 기능 일치)
   document.querySelectorAll('[data-nav], .ytm-nav-tab').forEach(btn => {
@@ -1001,22 +1057,27 @@ function initApp() {
       chip.classList.add('active');
       currentMood = chip.getAttribute('data-mood');
 
-      // 무드별 온라인 추천곡 확보
+      // 무드별 온라인 정품 추천곡 확보 (컴필레이션 및 10분 초과 믹스 영상 엄격 제외)
       const moodKeywords = {
-        sleep: '수면 음악 로파이 lofi sleep',
-        chill: '휴식 편안한 음악 chill beats',
-        energy: '에너지 충전 신나는 케이팝 dance',
-        happy: '기분 좋은 드라이브 팝송',
-        workout: '운동 런닝 헬스 rock workout',
-        focus: '공부 집중 로파이 focus study',
-        commute: '출퇴근길 음악',
-        ballad: '감성 발라드 명곡'
+        sleep: '잔잔한 피아노 수면 음악 MV',
+        chill: '카페 어쿠스틱 감성 인디 노래 MV',
+        energy: '신나는 K-POP 댄스곡 MV',
+        happy: '기분 좋은 청량 드라이브 팝송 MV',
+        workout: '신나는 EDM 헬스 워크아웃 MV',
+        focus: 'Lofi chill beats study',
+        commute: '출퇴근길 신나는 노래 M/V',
+        ballad: '감성 발라드 명곡 M/V'
       };
 
       if (currentMood !== 'all' && moodKeywords[currentMood]) {
         try {
           const res = await searchService.searchOnline(moodKeywords[currentMood]);
-          const moodTracks = Array.isArray(res) ? res : (res.tracks || res.songs || []);
+          const rawTracks = Array.isArray(res) ? res : (res.tracks || res.songs || []);
+          const moodTracks = rawTracks.filter(t => 
+            (!t.duration || t.duration <= 600) &&
+            !t.isCompilation &&
+            !((t.title || '').includes('플레이리스트') || (t.title || '').includes('노래모음') || (t.title || '').includes('1시간') || (t.title || '').includes('종합차트'))
+          );
           moodTracks.forEach(t => {
             t.mood = currentMood;
             if (!allTracks.find(item => item.id === t.id || item.videoId === t.videoId)) {
@@ -1145,8 +1206,9 @@ function initApp() {
     // 둘러보기 장르 카드 클릭 시 홈으로 튕기지 않고 전용 추천 패널 열기
     const genreCard = e.target.closest('.genre-card');
     if (genreCard) {
-      const mood = genreCard.getAttribute('data-genre-mood');
-      openGenreDetail(mood);
+      const genreId = genreCard.getAttribute('data-genre-id') || genreCard.getAttribute('data-genre-mood');
+      const genreName = genreCard.getAttribute('data-genre-name');
+      openGenreDetail(genreId, genreName);
       return;
     }
 
@@ -1215,44 +1277,90 @@ function initApp() {
 
   // 둘러보기 전용 장르 상세 열기 함수 (장르 및 분위기별 맞춤 아티스트 및 실시간 추천 곡 로드)
   let currentGenreTracks = [];
-  async function openGenreDetail(mood) {
-    const genre = genresData.find(g => g.mood === mood) || { name: mood, color: '#ef4444', mood };
+  async function openGenreDetail(genreId, genreNameOverride) {
+    const genre = genresData.find(g => g.id === genreId || g.mood === genreId || g.name === genreNameOverride) || 
+                  { id: genreId, name: genreNameOverride || genreId, color: '#ef4444', mood: genreId };
 
-    // 장르/분위기별 전용 맞춤 검색 쿼리 (사용자 요청: 동일 아티스트 반복 탈피, 분위기와 장르에 맞는 진짜 추천)
+    const genreTitle = genre.name || genreNameOverride || '추천 장르';
+
+    // 1) 0ms 즉각 로컬 allTracks 매칭 곡 먼저 렌더링
+    let localTracks = allTracks.filter(t => {
+      const gm = ((t.genre || '') + ' ' + (t.mood || '')).toLowerCase();
+      if (genre.id === 'kpop' || genre.mood === 'kpop') return gm.includes('k-pop') || gm.includes('kpop') || gm.includes('pop');
+      if (genre.id === 'billboard' || genre.mood === 'billboard') return gm.includes('pop') || gm.includes('all');
+      if (genre.id === 'chill' || genre.mood === 'chill') return gm.includes('chill') || gm.includes('acoustic') || gm.includes('calm');
+      if (genre.id === 'hiphop' || genre.mood === 'hiphop') return gm.includes('hiphop') || gm.includes('hip-hop') || gm.includes('r&b') || gm.includes('r-b');
+      if (genre.id === 'workout' || genre.mood === 'workout') return gm.includes('workout') || gm.includes('energy') || gm.includes('upbeat');
+      if (genre.id === 'focus' || genre.mood === 'focus') return gm.includes('focus') || gm.includes('ballad') || gm.includes('calm');
+      return gm.includes((genre.mood || '').toLowerCase()) || gm.includes((genre.id || '').toLowerCase());
+    });
+
+    currentGenreTracks = localTracks;
+    ui.renderGenreDetail(genreTitle, genre.color, localTracks);
+
+    // 2) K-POP 및 빌보드는 공식 차트 API (/api/charts) 연동
+    if (genre.id === 'kpop' || genre.id === 'billboard') {
+      try {
+        const chartUrl = genre.id === 'kpop' ? '/api/charts?type=korea' : '/api/charts?type=global';
+        const res = await fetch(chartUrl);
+        if (res.ok) {
+          const chartTracks = await res.json();
+          if (Array.isArray(chartTracks) && chartTracks.length > 0) {
+            const cleanChartTracks = chartTracks.filter(t => 
+              (!t.duration || t.duration <= 600) && 
+              !t.isCompilation && 
+              !((t.title || '').includes('플레이리스트') || (t.title || '').includes('노래모음') || (t.title || '').includes('종합차트'))
+            );
+            cleanChartTracks.forEach(t => {
+              t.genre = genre.id;
+              t.mood = genre.mood;
+              if (!allTracks.find(item => item.id === t.id || item.videoId === t.videoId)) {
+                allTracks.push(t);
+              }
+            });
+            currentGenreTracks = cleanChartTracks;
+            ui.renderGenreDetail(genreTitle, genre.color, cleanChartTracks);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Genre chart fetch error:", e);
+      }
+    }
+
+    // 3) 그 외 무드/장르는 검증된 정품 노래 전용 쿼리로 온라인 검색
     const genreKeywords = {
-      "energy": "2026 K-POP 신곡 인기 댄스",
-      "all": "빌보드 글로벌 핫 100 인기 팝송",
-      "chill": "카페 칠 힐링 어쿠스틱 감성 인디 노래",
-      "workout": "피트니스 파워 헬스 힙합 EDM 운동 비트",
-      "focus": "집중 스터디 잔잔한 피아노 지브리 로파이 연주곡"
+      "chill": "카페 어쿠스틱 노래 MV",
+      "hiphop": "지코 창모 비오 박재범 랩 MV",
+      "workout": "신나는 EDM 댄스 인기곡 MV",
+      "focus": "Lofi chill beats study"
     };
 
-    const targetQuery = genreKeywords[mood] || `${genre.name} 명곡 노래`;
+    const targetQuery = genreKeywords[genre.id] || genreKeywords[genre.mood] || `${genreTitle} 인기곡 노래 MV`;
 
-    // 해당 분위기/장르에 100% 매칭되는 곡들을 실시간으로 로드
     try {
       const searchRes = await searchService.searchOnline(targetQuery);
       const newTracks = Array.isArray(searchRes) ? searchRes : (searchRes.tracks || searchRes.songs || []);
-      if (newTracks.length > 0) {
-        newTracks.forEach(t => {
-          t.genre = mood;
-          t.mood = mood;
+      const cleanTracks = newTracks.filter(t => 
+        (!t.duration || t.duration <= 600) && 
+        !t.isCompilation && 
+        !((t.title || '').includes('플레이리스트') || (t.title || '').includes('노래모음') || (t.title || '').includes('모음집') || (t.title || '').includes('1시간'))
+      );
+
+      if (cleanTracks.length > 0) {
+        cleanTracks.forEach(t => {
+          t.genre = genre.id;
+          t.mood = genre.mood;
           if (!allTracks.find(item => item.id === t.id || item.videoId === t.videoId)) {
             allTracks.push(t);
           }
         });
-        currentGenreTracks = newTracks;
-        ui.renderGenreDetail(genre.name, genre.color, newTracks);
-        return;
+        currentGenreTracks = cleanTracks;
+        ui.renderGenreDetail(genreTitle, genre.color, cleanTracks);
       }
     } catch (e) {
       console.warn("Genre search online error:", e);
     }
-
-    // 폴백 로컬 매칭
-    let genreTracks = allTracks.filter(t => t.genre === mood || t.mood === mood);
-    currentGenreTracks = genreTracks;
-    ui.renderGenreDetail(genre.name, genre.color, genreTracks);
   }
 
   // 8. Player Controls
@@ -1376,33 +1484,46 @@ function initApp() {
                         document.body.classList.contains('player-modal-open');
 
     if (!isVideoMode || !videoWrap) {
-      persistent.style.position = 'fixed';
-      persistent.style.top = '0px';
-      persistent.style.left = '0px';
-      persistent.style.width = '320px';
-      persistent.style.height = '240px';
-      persistent.style.transform = 'none';
-      persistent.style.opacity = '0.001';
-      persistent.style.pointerEvents = 'none';
-      persistent.style.zIndex = '9999';
-      persistent.style.borderRadius = '0px';
+      persistent.style.setProperty('position', 'fixed', 'important');
+      persistent.style.setProperty('top', '0px', 'important');
+      persistent.style.setProperty('left', '0px', 'important');
+      persistent.style.setProperty('width', '320px', 'important');
+      persistent.style.setProperty('height', '240px', 'important');
+      persistent.style.setProperty('transform', 'none', 'important');
+      persistent.style.setProperty('opacity', '0.001', 'important');
+      persistent.style.setProperty('pointer-events', 'none', 'important');
+      persistent.style.setProperty('z-index', '9999', 'important');
+      persistent.style.setProperty('border-radius', '0px', 'important');
       return;
     }
 
     const rect = videoWrap.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      persistent.style.position = 'fixed';
-      persistent.style.top = `${rect.top}px`;
-      persistent.style.left = `${rect.left}px`;
-      persistent.style.width = `${rect.width}px`;
-      persistent.style.height = `${rect.height}px`;
-      persistent.style.transform = 'none';
-      persistent.style.opacity = '1';
-      persistent.style.pointerEvents = 'auto';
-      persistent.style.zIndex = '999';
-      persistent.style.borderRadius = '12px';
+      persistent.style.setProperty('position', 'fixed', 'important');
+      persistent.style.setProperty('top', `${Math.round(rect.top)}px`, 'important');
+      persistent.style.setProperty('left', `${Math.round(rect.left)}px`, 'important');
+      persistent.style.setProperty('width', `${Math.round(rect.width)}px`, 'important');
+      persistent.style.setProperty('height', `${Math.round(rect.height)}px`, 'important');
+      persistent.style.setProperty('transform', 'none', 'important');
+      persistent.style.setProperty('opacity', '1', 'important');
+      persistent.style.setProperty('pointer-events', 'auto', 'important');
+      persistent.style.setProperty('z-index', '999', 'important');
+      persistent.style.setProperty('border-radius', '12px', 'important');
     }
   };
+
+  // 모바일 비디오 위치 자동 추적용 ResizeObserver 바인딩
+  if (typeof ResizeObserver !== 'undefined') {
+    const targetVideoWrap = document.getElementById('modal-video-wrap');
+    if (targetVideoWrap) {
+      const vRo = new ResizeObserver(() => {
+        if (document.body.classList.contains('video-mode-active')) {
+          syncVideoPosition();
+        }
+      });
+      vRo.observe(targetVideoWrap);
+    }
+  }
 
   const syncTheaterUI = (isTheater) => {
     const modalEl = ui.dom.fullModal || document.getElementById('full-player-modal');
@@ -1465,7 +1586,9 @@ function initApp() {
       requestAnimationFrame(() => {
         syncVideoPosition();
       });
-      setTimeout(syncVideoPosition, 80);
+      setTimeout(syncVideoPosition, 50);
+      setTimeout(syncVideoPosition, 150);
+      setTimeout(syncVideoPosition, 300);
     } else {
       btnSong?.classList.add('active');
       btnVideo?.classList.remove('active');
@@ -1518,6 +1641,12 @@ function initApp() {
     const activeTab = document.querySelector('.modal-tab.active');
     if (!activeTab) {
       document.querySelector('.modal-tab[data-tab="up-next"]')?.click();
+    }
+
+    if (currentMediaMode === 'video') {
+      requestAnimationFrame(() => syncVideoPosition());
+      setTimeout(syncVideoPosition, 80);
+      setTimeout(syncVideoPosition, 250);
     }
   }
 

@@ -269,10 +269,10 @@ export const sampleAlbums = [
 ];
 
 export const genresData = [
-  { name: "K-POP 인기 차트", color: "linear-gradient(135deg, #ff0055 0%, #7928ca 100%)", mood: "energy" },
-  { name: "글로벌 핫 50 빌보드", color: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)", mood: "all" },
-  { name: "칠 & 휴식 감성", color: "linear-gradient(135deg, #10b981 0%, #047857 100%)", mood: "chill" },
-  { name: "힙합 & 비트", color: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", mood: "energy" },
-  { name: "파워 운동 & 피트니스", color: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)", mood: "workout" },
-  { name: "집중 & 스터디", color: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)", mood: "focus" }
+  { id: "kpop", name: "K-POP 인기 차트", color: "linear-gradient(135deg, #ff0055 0%, #7928ca 100%)", mood: "kpop" },
+  { id: "billboard", name: "글로벌 핫 50 빌보드", color: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)", mood: "billboard" },
+  { id: "chill", name: "칠 & 휴식 감성", color: "linear-gradient(135deg, #10b981 0%, #047857 100%)", mood: "chill" },
+  { id: "hiphop", name: "힙합 & 비트", color: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", mood: "hiphop" },
+  { id: "workout", name: "파워 운동 & 피트니스", color: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)", mood: "workout" },
+  { id: "focus", name: "집중 & 스터디", color: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)", mood: "focus" }
 ];

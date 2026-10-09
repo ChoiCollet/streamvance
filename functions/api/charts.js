@@ -9,129 +9,136 @@ export async function onRequestGet(context) {
     'Cache-Control': 'public, max-age=1800, s-maxage=3600'
   };
 
-  // 1. YouTube Innertube API 차트 검색 시도
-  try {
-    const payload = {
-      context: {
-        client: {
-          clientName: 'WEB',
-          clientVersion: '2.20240101.00.00',
-          hl: 'ko',
-          gl: 'KR'
-        }
-      },
-      query: '2026 K-POP 인기 차트 TOP 50'
-    };
+  const url = new URL(context.request.url);
+  const chartType = (url.searchParams.get('type') || 'global').toLowerCase();
+  const targetPid = (chartType === 'korea' || chartType === 'kpop')
+    ? 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc'
+    : 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM';
 
-    const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+  // 1. YouTube Innertube Browse API로 공식 차트 재생목록 직접 조회
+  try {
+    const browseRes = await fetch('https://www.youtube.com/youtubei/v1/browse', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'WEB',
+            clientVersion: '2.20240101.00.00',
+            hl: 'ko',
+            gl: 'KR'
+          }
+        },
+        browseId: `VL${targetPid}`
+      })
     });
 
+    if (browseRes.ok) {
+      const bdata = await browseRes.json();
+      const tc = bdata?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+      const tracks = [];
+
+      for (const section of tc) {
+        const items = section?.itemSectionRenderer?.contents || [];
+        for (const it of items) {
+          if (!it.lockupViewModel) continue;
+          const lvm = it.lockupViewModel;
+          const vid = lvm.contentId;
+          if (!vid) continue;
+
+          const meta = lvm.metadata?.lockupMetadataViewModel || {};
+          const vTitle = meta.title?.content || '';
+          const mRows = meta.metadata?.contentMetadataViewModel?.metadataRows || [];
+          let vArtist = 'YouTube Music';
+          let vDuration = 210;
+
+          for (const row of mRows) {
+            for (const part of (row.metadataParts || [])) {
+              const txt = part.text?.content || '';
+              if (txt.includes(':') && txt.replace(/:/g, '').split('').every(c => c >= '0' && c <= '9')) {
+                const pts = txt.split(':').map(n => parseInt(n, 10));
+                vDuration = pts.length === 2 ? pts[0] * 60 + pts[1] : pts[0] * 3600 + pts[1] * 60 + pts[2];
+              } else if (txt && !txt.startsWith('조회수') && !txt.endsWith('전')) {
+                vArtist = txt;
+              }
+            }
+          }
+
+          // 믹스/컴필레이션 및 10분 초과 영상 엄격 제외
+          const lt = vTitle.toLowerCase();
+          const isComp = vDuration > 600 || ['playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간'].some(k => lt.includes(k));
+          if (!isComp) {
+            tracks.push({
+              id: `yt-${vid}`,
+              videoId: vid,
+              title: vTitle.replace(/\[(Official|MV|M\/V).*?\]/gi, '').replace(/\((Official|MV|M\/V).*?\)/gi, '').trim(),
+              artist: vArtist,
+              album: (chartType === 'korea' || chartType === 'kpop') ? '한국 인기 차트 TOP 100' : '글로벌 인기 차트 TOP 100',
+              genre: 'pop',
+              mood: 'all',
+              duration: vDuration,
+              cover: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              lyrics: [],
+              isLiked: false,
+              isPlaylistTrack: true
+            });
+          }
+        }
+      }
+
+      if (tracks.length > 0) {
+        return new Response(JSON.stringify(tracks), { headers });
+      }
+    }
+  } catch (e) {
+    console.warn('Innertube browse chart failed:', e);
+  }
+
+  // 2. 폴백 검색
+  try {
+    const q = (chartType === 'korea' || chartType === 'kpop') ? 'K-POP 최신 인기곡 MV' : 'Billboard Hot 100 official MV';
+    const payload = {
+      context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00', hl: 'ko', gl: 'KR' } },
+      query: q
+    };
+    const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
     if (res.ok) {
       const data = await res.json();
       const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
       const items = [];
-
       for (const section of contents) {
-        const itemSection = section?.itemSectionRenderer?.contents || [];
-        for (const item of itemSection) {
+        for (const item of (section?.itemSectionRenderer?.contents || [])) {
           const v = item?.videoRenderer;
           if (!v || !v.videoId) continue;
-
-          const videoId = v.videoId;
           const title = v.title?.runs?.[0]?.text || '';
-          const channel = v.ownerText?.runs?.[0]?.text || v.longBylineText?.runs?.[0]?.text || 'YouTube';
-          const thumbs = v.thumbnail?.thumbnails || [];
-          const cover = thumbs.length > 0 ? thumbs[thumbs.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
+          const lt = title.toLowerCase();
+          if (['playlist', '플레이리스트', '노래모음', '종합차트', '1시간'].some(k => lt.includes(k))) continue;
           items.push({
-            id: `yt-${videoId}`,
-            videoId: videoId,
+            id: `yt-${v.videoId}`,
+            videoId: v.videoId,
             title: title.replace(/\[.*?\]|\(.*?\)/g, '').trim(),
-            artist: channel,
-            album: '실시간 인기 차트',
+            artist: v.ownerText?.runs?.[0]?.text || 'YouTube',
+            album: '실시간 차트',
             genre: 'pop',
             mood: 'energy',
             duration: 210,
-            cover: cover,
+            cover: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
             isLiked: false
           });
-
-          if (items.length >= 25) break;
-        }
-        if (items.length >= 25) break;
-      }
-
-      if (items.length > 0) {
-        return new Response(JSON.stringify(items), { headers });
-      }
-    }
-  } catch (e) {
-    console.warn('Innertube charts failed:', e);
-  }
-
-  // 2. HTML 스크래핑 폴백
-  try {
-    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent('2026 K-POP 인기 차트 TOP 50')}&sp=EgIQAQ%253D%253D`;
-    const res = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'ko-KR,ko;q=0.9'
-      }
-    });
-
-    if (res.ok) {
-      const html = await res.text();
-      let match = html.match(/ytInitialData\s*=\s*({.+?});<\/script>/);
-      if (!match) match = html.match(/var ytInitialData\s*=\s*({.+?});/);
-
-      if (match) {
-        const data = JSON.parse(match[1]);
-        const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
-        const items = [];
-
-        for (const section of contents) {
-          const itemSection = section?.itemSectionRenderer?.contents || [];
-          for (const item of itemSection) {
-            const v = item?.videoRenderer;
-            if (!v || !v.videoId) continue;
-
-            const videoId = v.videoId;
-            const title = v.title?.runs?.[0]?.text || '';
-            const channel = v.ownerText?.runs?.[0]?.text || 'YouTube';
-            const thumbs = v.thumbnail?.thumbnails || [];
-            const cover = thumbs.length > 0 ? thumbs[thumbs.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-            items.push({
-              id: `yt-${videoId}`,
-              videoId: videoId,
-              title: title.replace(/\[.*?\]|\(.*?\)/g, '').trim(),
-              artist: channel,
-              album: '실시간 인기 차트',
-              genre: 'pop',
-              mood: 'energy',
-              duration: 210,
-              cover: cover,
-              isLiked: false
-            });
-
-            if (items.length >= 25) break;
-          }
-          if (items.length >= 25) break;
-        }
-
-        if (items.length > 0) {
-          return new Response(JSON.stringify(items), { headers });
+          if (items.length >= 30) break;
         }
       }
+      if (items.length > 0) return new Response(JSON.stringify(items), { headers });
     }
   } catch (err) {
-    console.warn('Scrape charts failed:', err);
+    console.warn('Fallback search failed:', err);
   }
 
   return new Response(JSON.stringify([]), { headers });

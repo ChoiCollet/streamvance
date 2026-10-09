@@ -2134,21 +2134,22 @@ a {
    비가시 상태(Song 모드/미니 플레이어)에서는 최상위 z-index(9999) 및 극미량 투명도(opacity: 0.001)로 배치하여
    브라우저 합성기의 오클루전(Occlusion/가림) 감지를 완벽 우회하면서도 사용자 눈에는 100% 무노출, 터치 무간섭(pointer-events: none) 보장! */
 .yt-player-persistent-wrap {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  bottom: auto !important;
-  width: 320px !important;
-  height: 240px !important;
-  z-index: 9999 !important;
-  opacity: 0.001 !important;
-  pointer-events: none !important;
-  overflow: hidden !important;
-  background: transparent !important;
-  border: none !important;
-  clip-path: none !important;
-  visibility: visible !important;
-  transition: opacity 0.2s ease !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: auto;
+  width: 320px;
+  height: 240px;
+  z-index: 9999;
+  opacity: 0.001;
+  pointer-events: none;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  clip-path: none;
+  visibility: visible;
+  transition: opacity 0.2s ease, border-radius 0.2s ease;
+  will-change: top, left, width, height, opacity;
 }
 
 .yt-player-persistent-wrap iframe,
@@ -2160,13 +2161,20 @@ a {
 }
 
 /* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 선명하게 표시 (가로세로 중앙 정렬) */
+body.player-modal-open.video-mode-active .stage-media-wrap {
+  aspect-ratio: 16 / 9 !important;
+  max-width: min(94vw, 540px) !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+}
+
 body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
-  z-index: 999 !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  clip-path: none !important;
-  border-radius: 12px !important;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
+  z-index: 999;
+  opacity: 1;
+  pointer-events: auto;
+  clip-path: none;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9);
 }
 
 /* 동영상 제어 툴바 (대형 영상 모드, 전체화면 버튼) - 영상 위에 상시 안전 노출 */
@@ -2971,11 +2979,17 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     gap: 8px;
     overflow-y: auto;
     justify-content: flex-start;
+    align-items: center;
   }
 
   .modal-visual-panel {
-    max-width: 100%;
+    max-width: 520px;
     width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
   }
 
   .stage-media-wrap {
@@ -2986,16 +3000,29 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+  }
+
+  body.video-mode-active .stage-media-wrap,
+  body.player-modal-open.video-mode-active .stage-media-wrap {
+    aspect-ratio: 16 / 9 !important;
+    max-width: min(94vw, 520px) !important;
+    width: 100% !important;
+    margin: 0 auto !important;
   }
 
   .modal-album-art-wrap {
     border-radius: 12px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
+    margin: 0 auto;
   }
 
   .modal-track-info-row {
     margin-top: 14px;
     width: 100%;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
     padding: 0 4px;
     display: flex;
     align-items: center;
@@ -3066,7 +3093,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     display: flex;
     flex-direction: column;
     width: 100%;
-    margin-top: 14px;
+    max-width: 480px;
+    margin: 14px auto 0 auto;
     padding: 0 4px;
   }
 
@@ -3128,9 +3156,11 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   .mobile-ctrl-actions-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-top: 14px;
+    justify-content: space-around;
+    margin: 14px auto 0 auto;
     padding: 0 4px;
+    max-width: 380px;
+    width: 100%;
   }
 
   .mobile-ctrl-btn {
@@ -6314,9 +6344,12 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 .ytm-action-pills-bar {
   display: flex;
   align-items: center;
+  justify-content: center !important;
   gap: 8px;
-  margin-top: 14px;
+  margin: 14px auto 0 auto;
   padding: 0 4px;
+  max-width: 480px;
+  width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
