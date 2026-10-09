@@ -202,20 +202,30 @@ export class YouTubeSearchService {
     }
 
     const nonMusicKeywords = [
+      '사장님도 대답', '대답!', '썰', '상황극', '더빙', '쇼츠', 'shorts', '#shorts',
+      '개그', '애니', '만화', '상담', '잡담', '소통', '월드컵', '이상형', '영도',
       'review', '리뷰', 'unboxing', '언박싱', '사용기',
-      'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
+      'gameplay', 'walkthrough', 'playthrough', '게임', 'game', '공략', '롤', '배그',
       'ytn', '기자', '정치', '시사',
       'lecture', '강의', '설교', 'study with me',
-      '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
+      '토크', 'talk', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
       '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
-      '하이라이트', 'highlight', '선공개', '예고편'
+      '하이라이트', 'highlight', '선공개', '예고편', '브이로그', 'vlog'
     ];
 
     for (const kw of nonMusicKeywords) {
       if (lt.includes(kw) || lc.includes(kw)) {
-        if (!hasMusicGuard) return true;
+        return true;
       }
     }
+
+    // 버튜버/스트리머/크리에이터 일상 대화 및 썰 영상 감지
+    const chatterWords = ['ㅋㅋㅋ', 'ㅎㅎㅎ', '?!', '대답', '질문', '고민', '고백', '썰푼', '썰풀기', '참교육', '반응'];
+    const musicTokens = ['mv', 'm/v', 'official', 'audio', '음원', '노래', '곡', 'cover', '커버', 'song', 'track', 'feat', 'ost', 'lyrics', '가사', '|', '-'];
+    if (chatterWords.some(cw => lt.includes(cw)) && !musicTokens.some(mt => lt.includes(mt))) {
+      return true;
+    }
+
     return false;
   }
 

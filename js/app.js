@@ -23,6 +23,7 @@ function initApp() {
   const searchService = new YouTubeSearchService();
   const colorExtractor = new ColorExtractor();
   const pipManager = new PiPManager(player, ui, lyricsService);
+  window.pipManager = pipManager;
   const takeoutService = new TakeoutService(auth, ui);
 
   let allTracks = [...sampleTracks];
@@ -204,15 +205,67 @@ function initApp() {
   };
 
   // ==========================================================================
+  // 비음악(토크/썰/상황극/shorts/잡담) 및 플레이리스트 모음 엄격 감지 필터
+  // ==========================================================================
+  function isNonMusicTrack(track) {
+    if (!track) return false;
+    const title = (track.title || '').toLowerCase();
+    const artist = (track.artist || '').toLowerCase();
+    const album = (track.album || '').toLowerCase();
+    const combined = `${title} ${artist} ${album}`;
+
+    const nonMusicKeywords = [
+      '사장님도 대답', '대답!', '토크', 'talk', '썰', '상황극', '더빙',
+      '쇼츠', 'shorts', '#shorts', '개그', '애니', '만화', '상담',
+      '잡담', '라디오', '브이로그', 'vlog', '먹방', 'mukbang', '게임', 'game',
+      '플레이', 'playthrough', '하이라이트', 'highlight', '클립', 'clip',
+      '리액션', 'reaction', '비하인드', 'behind', '메이킹', 'making',
+      '인터뷰', 'interview', '공지', 'notice', '생방송', '라이브 방송',
+      '다시보기', 'archive', '풀영상', '후기', '소통', 'q&a', 'qna',
+      '월드컵', '이상형', '영도'
+    ];
+    if (nonMusicKeywords.some(kw => combined.includes(kw))) return true;
+
+    // 스트리머/버튜버/크리에이터 일상 대화 및 썰 영상 감지:
+    // 제목에 일상 토크 어휘가 있고 음악 식별자가 전혀 없으면 비음악으로 판정
+    const chatterWords = ['ㅋㅋㅋ', 'ㅎㅎㅎ', '?!', '대답', '질문', '고민', '고백', '썰푼', '썰풀기', '참교육', '반응'];
+    const musicTokens = ['mv', 'm/v', 'official', 'audio', '음원', '노래', '곡', 'cover', '커버', 'song', 'track', 'feat', 'ost', 'lyrics', '가사', '|', '-'];
+    if (chatterWords.some(cw => title.includes(cw)) && !musicTokens.some(mt => title.includes(mt))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function isCompilationTrack(track) {
+    if (!track) return true;
+    if (track.isCompilation) return true;
+    const title = (track.title || '').toLowerCase();
+    const artist = (track.artist || '').toLowerCase();
+    const combined = `${title} ${artist}`;
+
+    const compilationKeywords = [
+      '차트둥이', '플레이리스트', 'playlist', '노래모음', '모음', '종합차트', '차트 x',
+      '1시간', '1hour', 'top 100', 'top100', 'top 50', 'top50', '멜론', 'melon',
+      '연속듣기', '인기가요', '주차', '2025년', '2026년', '2024년', 'mix', '연속 재생',
+      '광고없는', 'best songs', 'greatest hits', 'hit songs', 'compilation'
+    ];
+    if (compilationKeywords.some(kw => combined.includes(kw))) return true;
+    if (track.duration && (track.duration > 480 || track.duration < 65)) return true;
+    return false;
+  }
+
+  // ==========================================================================
   // 실시간 사용자 취향 기반 빠른 선곡 (Dynamic Taste-based Quick Picks)
   // ==========================================================================
   function getPersonalizedQuickPicks() {
-    // 1) 후보 풀: allTracks + playHistory + likedTracksMap 합치기 (최신 재생 곡이 반드시 포함되도록)
+    // 1) 후보 풀: allTracks + playHistory + likedTracksMap 합치기 (비음악/컴필레이션 원천 배제)
     const poolMap = new Map();
     allTracks.forEach(t => poolMap.set(t.id, t));
     ui.playHistory.forEach(t => poolMap.set(t.id, t));
     ui.likedTracksMap.forEach(t => poolMap.set(t.id, t));
-    const candidatePool = Array.from(poolMap.values());
+    const rawCandidatePool = Array.from(poolMap.values());
+    const candidatePool = rawCandidatePool.filter(t => !isNonMusicTrack(t) && !isCompilationTrack(t));
 
     const taste = auth.analyzeUserTaste(candidatePool);
     const topGenres = new Set(taste.genres.slice(0, 3).map(g => g.genre));
@@ -290,6 +343,7 @@ function initApp() {
   // 곡 선택 시 연관성 높은 맞춤 대기열 생성 엔진 (아티스트/장르/무드/청취기록 기반)
   function generateSmartQueue(selectedTrack, pool = allTracks) {
     if (!selectedTrack) return [];
+    const cleanPool = pool.filter(t => !isNonMusicTrack(t) && !isCompilationTrack(t));
     const artist = (selectedTrack.artist || '').toLowerCase().trim();
     const genre = (selectedTrack.genre || '').toLowerCase().trim();
     const mood = (selectedTrack.mood || '').toLowerCase().trim();
@@ -301,7 +355,7 @@ function initApp() {
 
     // 1. 같은 아티스트 곡 우선 (최대 3곡)
     if (artist && artist.length > 1) {
-      const sameArtist = pool.filter(t => 
+      const sameArtist = cleanPool.filter(t => 
         !queueSet.has(t.id) && 
         (!t.videoId || !queueSet.has(t.videoId)) &&
         (t.artist || '').toLowerCase().includes(artist)
@@ -314,7 +368,7 @@ function initApp() {
     }
 
     // 2. 같은 장르 / 분위기 곡 (최대 8곡)
-    const sameGenreMood = pool.filter(t =>
+    const sameGenreMood = cleanPool.filter(t =>
       !queueSet.has(t.id) &&
       (!t.videoId || !queueSet.has(t.videoId)) &&
       ((genre && (t.genre || '').toLowerCase() === genre) || 
@@ -388,80 +442,8 @@ function initApp() {
     { name: "지코 (ZICO)", query: "지코", image: "https://i.ytimg.com/vi/azaZt7eccnc/hqdefault.jpg" }
   ];
 
-  // 각 아티스트별 정품 대표곡 컬렉션 (모든 ID 100% 정상 작동 검증 완료)
-  const SPOTLIGHT_ARTIST_TRACKS = {
-    "NewJeans": [
-      { id: "yt-pSUydWEqKwE", videoId: "pSUydWEqKwE", title: "Ditto", artist: "NewJeans", album: "NewJeans 'OMG'", genre: "k-pop", mood: "calm", duration: 186, cover: "https://i.ytimg.com/vi/pSUydWEqKwE/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-9wUKhEgnllc", videoId: "9wUKhEgnllc", title: "Hype Boy", artist: "NewJeans", album: "1st EP 'New Jeans'", genre: "k-pop", mood: "upbeat", duration: 179, cover: "https://i.ytimg.com/vi/9wUKhEgnllc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-ArmDp-zijuc", videoId: "ArmDp-zijuc", title: "Super Shy", artist: "NewJeans", album: "Get Up", genre: "k-pop", mood: "upbeat", duration: 154, cover: "https://i.ytimg.com/vi/ArmDp-zijuc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-sVTy_wmn5SU", videoId: "sVTy_wmn5SU", title: "OMG", artist: "NewJeans", album: "NewJeans 'OMG'", genre: "k-pop", mood: "chill", duration: 213, cover: "https://i.ytimg.com/vi/sVTy_wmn5SU/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-Q3K0TOvTOno", videoId: "Q3K0TOvTOno", title: "How Sweet", artist: "NewJeans", album: "How Sweet", genre: "k-pop", mood: "chill", duration: 219, cover: "https://i.ytimg.com/vi/Q3K0TOvTOno/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-jOTfBlKSQYY", videoId: "jOTfBlKSQYY", title: "ETA", artist: "NewJeans", album: "Get Up", genre: "k-pop", mood: "upbeat", duration: 151, cover: "https://i.ytimg.com/vi/jOTfBlKSQYY/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-js1CtxSY38I", videoId: "js1CtxSY38I", title: "Attention", artist: "NewJeans", album: "1st EP 'New Jeans'", genre: "k-pop", mood: "chill", duration: 180, cover: "https://i.ytimg.com/vi/js1CtxSY38I/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "아이유 (IU)": [
-      { id: "yt-JleoAppaxi0", videoId: "JleoAppaxi0", title: "Love wins all", artist: "아이유 (IU)", album: "The Winning", genre: "ballad", mood: "focus", duration: 271, cover: "https://i.ytimg.com/vi/JleoAppaxi0/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-BzYnNdJhZQw", videoId: "BzYnNdJhZQw", title: "밤편지 (Through the Night)", artist: "아이유 (IU)", album: "Palette", genre: "acoustic", mood: "calm", duration: 253, cover: "https://i.ytimg.com/vi/BzYnNdJhZQw/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-TgOu00Mf3kI", videoId: "TgOu00Mf3kI", title: "에잇 (eight feat. SUGA)", artist: "아이유 (IU)", album: "에잇", genre: "pop", mood: "upbeat", duration: 167, cover: "https://i.ytimg.com/vi/TgOu00Mf3kI/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-v7bnOxV4jAc", videoId: "v7bnOxV4jAc", title: "라일락 (LILAC)", artist: "아이유 (IU)", album: "IU 5th Album 'LILAC'", genre: "pop", mood: "upbeat", duration: 215, cover: "https://i.ytimg.com/vi/v7bnOxV4jAc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-sqgxcCjD04s", videoId: "sqgxcCjD04s", title: "strawberry moon", artist: "아이유 (IU)", album: "strawberry moon", genre: "pop", mood: "chill", duration: 205, cover: "https://i.ytimg.com/vi/sqgxcCjD04s/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-4L-H_cXSNhQ", videoId: "4L-H_cXSNhQ", title: "너의 의미 (Meaning of you)", artist: "아이유 (IU)", album: "꽃갈피", genre: "acoustic", mood: "chill", duration: 195, cover: "https://i.ytimg.com/vi/4L-H_cXSNhQ/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "LE SSERAFIM": [
-      { id: "yt-hLvWy2b857I", videoId: "hLvWy2b857I", title: "Perfect Night", artist: "LE SSERAFIM", album: "Perfect Night", genre: "k-pop", mood: "chill", duration: 159, cover: "https://i.ytimg.com/vi/hLvWy2b857I/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-bNKXxwOQYB8", videoId: "bNKXxwOQYB8", title: "EASY", artist: "LE SSERAFIM", album: "EASY", genre: "k-pop", mood: "chill", duration: 165, cover: "https://i.ytimg.com/vi/bNKXxwOQYB8/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-KNexS61fjus", videoId: "KNexS61fjus", title: "Smart", artist: "LE SSERAFIM", album: "EASY", genre: "k-pop", mood: "upbeat", duration: 166, cover: "https://i.ytimg.com/vi/KNexS61fjus/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-pyf8cbqyfPs", videoId: "pyf8cbqyfPs", title: "ANTIFRAGILE", artist: "LE SSERAFIM", album: "ANTIFRAGILE", genre: "k-pop", mood: "workout", duration: 184, cover: "https://i.ytimg.com/vi/pyf8cbqyfPs/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-n6B5gQXlB-0", videoId: "n6B5gQXlB-0", title: "CRAZY", artist: "LE SSERAFIM", album: "CRAZY", genre: "k-pop", mood: "workout", duration: 164, cover: "https://i.ytimg.com/vi/n6B5gQXlB-0/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-UBURTj20HXI", videoId: "UBURTj20HXI", title: "UNFORGIVEN (feat. Nile Rodgers)", artist: "LE SSERAFIM", album: "UNFORGIVEN", genre: "k-pop", mood: "workout", duration: 182, cover: "https://i.ytimg.com/vi/UBURTj20HXI/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "IVE (아이브)": [
-      { id: "yt-6ZUIwj3FgUY", videoId: "6ZUIwj3FgUY", title: "I AM", artist: "IVE (아이브)", album: "I've IVE", genre: "k-pop", mood: "upbeat", duration: 184, cover: "https://i.ytimg.com/vi/6ZUIwj3FgUY/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-Y8JFxS1HlDo", videoId: "Y8JFxS1HlDo", title: "LOVE DIVE", artist: "IVE (아이브)", album: "LOVE DIVE", genre: "k-pop", mood: "chill", duration: 177, cover: "https://i.ytimg.com/vi/Y8JFxS1HlDo/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-F0B7HDiY-10", videoId: "F0B7HDiY-10", title: "After LIKE", artist: "IVE (아이브)", album: "After LIKE", genre: "k-pop", mood: "upbeat", duration: 177, cover: "https://i.ytimg.com/vi/F0B7HDiY-10/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-Da4P2uT4mVc", videoId: "Da4P2uT4mVc", title: "Baddie", artist: "IVE (아이브)", album: "I'VE MINE", genre: "k-pop", mood: "chill", duration: 154, cover: "https://i.ytimg.com/vi/Da4P2uT4mVc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-07EzMbVH3QE", videoId: "07EzMbVH3QE", title: "HEYA (해야)", artist: "IVE (아이브)", album: "IVE SWITCH", genre: "k-pop", mood: "upbeat", duration: 190, cover: "https://i.ytimg.com/vi/07EzMbVH3QE/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt---FmExEAsM8", videoId: "--FmExEAsM8", title: "ELEVEN", artist: "IVE (아이브)", album: "ELEVEN", genre: "k-pop", mood: "upbeat", duration: 178, cover: "https://i.ytimg.com/vi/--FmExEAsM8/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "aespa (에스파)": [
-      { id: "yt-phuiiNCxRMg", videoId: "phuiiNCxRMg", title: "Supernova", artist: "aespa (에스파)", album: "Armageddon", genre: "k-pop", mood: "workout", duration: 178, cover: "https://i.ytimg.com/vi/phuiiNCxRMg/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-jWQx2f-CErU", videoId: "jWQx2f-CErU", title: "Whiplash", artist: "aespa (에스파)", album: "Whiplash", genre: "k-pop", mood: "workout", duration: 184, cover: "https://i.ytimg.com/vi/jWQx2f-CErU/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-nFYwcndNuOY", videoId: "nFYwcndNuOY", title: "Armageddon", artist: "aespa (에스파)", album: "Armageddon", genre: "k-pop", mood: "workout", duration: 196, cover: "https://i.ytimg.com/vi/nFYwcndNuOY/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-4TWR90KJl84", videoId: "4TWR90KJl84", title: "Next Level", artist: "aespa (에스파)", album: "Next Level", genre: "k-pop", mood: "upbeat", duration: 221, cover: "https://i.ytimg.com/vi/4TWR90KJl84/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-D8VEhcPeSlc", videoId: "D8VEhcPeSlc", title: "Drama", artist: "aespa (에스파)", album: "Drama", genre: "k-pop", mood: "workout", duration: 214, cover: "https://i.ytimg.com/vi/D8VEhcPeSlc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-Os_heh8vPfs", videoId: "Os_heh8vPfs", title: "Spicy", artist: "aespa (에스파)", album: "MY WORLD", genre: "k-pop", mood: "upbeat", duration: 197, cover: "https://i.ytimg.com/vi/Os_heh8vPfs/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "ROSÉ": [
-      { id: "yt-ekr2nIex040", videoId: "ekr2nIex040", title: "APT. (with Bruno Mars)", artist: "ROSÉ & Bruno Mars", album: "rosie", genre: "pop", mood: "party", duration: 170, cover: "https://i.ytimg.com/vi/ekr2nIex040/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-CKZvWhCqx1s", videoId: "CKZvWhCqx1s", title: "On The Ground", artist: "ROSÉ", album: "-R-", genre: "pop", mood: "focus", duration: 168, cover: "https://i.ytimg.com/vi/CKZvWhCqx1s/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-K9_VFxzCuQ0", videoId: "K9_VFxzCuQ0", title: "Gone", artist: "ROSÉ", album: "-R-", genre: "ballad", mood: "calm", duration: 207, cover: "https://i.ytimg.com/vi/K9_VFxzCuQ0/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-pZ1NdE69VTs", videoId: "pZ1NdE69VTs", title: "number one girl", artist: "ROSÉ", album: "rosie", genre: "pop", mood: "chill", duration: 219, cover: "https://i.ytimg.com/vi/pZ1NdE69VTs/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-eA0lHNZ1KCA", videoId: "eA0lHNZ1KCA", title: "toxic till the end", artist: "ROSÉ", album: "rosie", genre: "pop", mood: "chill", duration: 157, cover: "https://i.ytimg.com/vi/eA0lHNZ1KCA/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "성시경": [
-      { id: "yt-3_nnLq4D3tc", videoId: "3_nnLq4D3tc", title: "너의 모든 순간", artist: "성시경", album: "별에서 온 그대 OST", genre: "ballad", mood: "focus", duration: 242, cover: "https://i.ytimg.com/vi/3_nnLq4D3tc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-8WYz-UEcLks", videoId: "8WYz-UEcLks", title: "거리에서", artist: "성시경", album: "The Ballads", genre: "ballad", mood: "calm", duration: 279, cover: "https://i.ytimg.com/vi/8WYz-UEcLks/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-pPDEayEY4M", videoId: "-pPDEayEY4M", title: "희재", artist: "성시경", album: "국화꽃 향기 OST", genre: "ballad", mood: "calm", duration: 275, cover: "https://i.ytimg.com/vi/-pPDEayEY4M/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-4JG-PmveayI", videoId: "4JG-PmveayI", title: "두 사람", artist: "성시경", album: "다시 꿈꾸고 싶다", genre: "ballad", mood: "calm", duration: 255, cover: "https://i.ytimg.com/vi/4JG-PmveayI/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-dA_ivcadYdc", videoId: "dA_ivcadYdc", title: "좋을텐데", artist: "성시경", album: "Melodie D' Amour", genre: "ballad", mood: "chill", duration: 236, cover: "https://i.ytimg.com/vi/dA_ivcadYdc/hqdefault.jpg", lyrics: [], isLiked: false }
-    ],
-    "지코 (ZICO)": [
-      { id: "yt-azaZt7eccnc", videoId: "azaZt7eccnc", title: "SPOT! (feat. JENNIE)", artist: "지코 (ZICO)", album: "SPOT!", genre: "hip-hop", mood: "party", duration: 168, cover: "https://i.ytimg.com/vi/azaZt7eccnc/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-UuV2BmJ1p_I", videoId: "UuV2BmJ1p_I", title: "아무노래 (Any song)", artist: "지코 (ZICO)", album: "아무노래", genre: "hip-hop", mood: "party", duration: 227, cover: "https://i.ytimg.com/vi/UuV2BmJ1p_I/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-C_cpDd0WYTk", videoId: "C_cpDd0WYTk", title: "새삥 (New thing feat. 호미들)", artist: "지코 (ZICO)", album: "스트릿 맨 파이터 OST", genre: "hip-hop", mood: "workout", duration: 147, cover: "https://i.ytimg.com/vi/C_cpDd0WYTk/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-DNPs2qqdhN0", videoId: "DNPs2qqdhN0", title: "Artist", artist: "지코 (ZICO)", album: "Television", genre: "hip-hop", mood: "party", duration: 202, cover: "https://i.ytimg.com/vi/DNPs2qqdhN0/hqdefault.jpg", lyrics: [], isLiked: false },
-      { id: "yt-xbf2c0JBJic", videoId: "xbf2c0JBJic", title: "너는 나 나는 너", artist: "지코 (ZICO)", album: "Break Up 2 Make Up", genre: "r-b", mood: "chill", duration: 217, cover: "https://i.ytimg.com/vi/xbf2c0JBJic/hqdefault.jpg", lyrics: [], isLiked: false }
-    ]
-  };
-
-  // 모든 아티스트 사전 대표곡을 전역 allTracks 풀에 등록
-  Object.values(SPOTLIGHT_ARTIST_TRACKS).forEach(trackList => {
-    trackList.forEach(t => {
-      if (!allTracks.find(item => item.id === t.id || item.videoId === t.videoId)) {
-        allTracks.push(t);
-      }
-    });
-  });
+  // 범용 아티스트 트랙 동적 로더 및 캐시 (특정 아티스트 하드코딩 완전 탈피 & 전 세계 모든 아티스트 100% 호환)
+  const artistTracksCache = new Map();
 
   let currentSpotlightIndex = 0;
 
@@ -543,39 +525,36 @@ function initApp() {
       };
     }
 
-    // 1) 사전 준비된 해당 아티스트 고유 트랙 확보
-    let artistTracks = SPOTLIGHT_ARTIST_TRACKS[artist.name] || [];
+    // 1) 메모리 캐시 또는 allTracks에서 해당 아티스트 곡 수집
+    let artistTracks = artistTracksCache.get(artist.name) || [];
+    const qLower = (artist.query || artist.name).toLowerCase().trim();
 
-    // 2) 전역 allTracks 중 해당 아티스트 일치 곡 추가 필터링
-    const qLower = (artist.query || artist.name).toLowerCase();
-    const extraTracks = allTracks.filter(t => {
-      const art = (t.artist || '').toLowerCase();
-      return art.includes(qLower) || (artist.name.toLowerCase().includes(art) && art.length >= 2);
-    });
+    if (artistTracks.length === 0) {
+      artistTracks = allTracks.filter(t => {
+        if (isNonMusicTrack(t) || isCompilationTrack(t)) return false;
+        const art = (t.artist || '').toLowerCase();
+        return art.includes(qLower) || (artist.name.toLowerCase().includes(art) && art.length >= 2);
+      });
+    }
 
-    extraTracks.forEach(et => {
-      if (!artistTracks.find(at => at.id === et.id || at.videoId === et.videoId)) {
-        artistTracks.push(et);
-      }
-    });
-
-    // 3) 0ms 즉시 화면 렌더링
+    // 2) 0ms 즉시 화면 렌더링
     ui.renderSpotlight(artistTracks);
     ui.renderSpotlightChips(activeArtists, currentSpotlightIndex, (newIdx) => {
       switchSpotlightArtist(newIdx);
     });
 
-    // 4) 스크롤 맨 앞으로 리셋
+    // 3) 스크롤 맨 앞으로 리셋
     const spotlightList = document.getElementById('spotlight-tracks-list');
     if (spotlightList) spotlightList.scrollTo({ left: 0, behavior: 'auto' });
 
-    // 5) 백그라운드 프리패치
-    if (artistTracks.length < 6) {
+    // 4) 실시간 온라인 정품 음원 동적 연동 (어떤 아티스트든 곡이 부족하면 즉각 고속 보충)
+    if (artistTracks.length < 5) {
       searchService.searchOnline(`${artist.query || artist.name} 노래`).then(searchRes => {
         if (currentSpotlightIndex !== index) return;
         const onlineTracks = Array.isArray(searchRes) ? searchRes : (searchRes.tracks || searchRes.songs || []);
         let added = false;
         onlineTracks.forEach(ot => {
+          if (isNonMusicTrack(ot) || isCompilationTrack(ot)) return;
           const art = (ot.artist || '').toLowerCase();
           const isTargetArtist = art.includes(qLower) || ot.title.toLowerCase().includes(qLower);
           if (isTargetArtist && !artistTracks.find(t => t.id === ot.id || t.videoId === ot.videoId)) {
@@ -587,25 +566,80 @@ function initApp() {
           }
         });
         if (added && currentSpotlightIndex === index) {
+          artistTracksCache.set(artist.name, artistTracks);
           ui.renderSpotlight(artistTracks);
         }
       }).catch(() => {});
+    } else {
+      artistTracksCache.set(artist.name, artistTracks);
     }
   }
 
   // ==========================================================================
   // 실시간 YouTube TOP 차트 로딩 (/api/charts) 및 글로벌 TOP 1 동적 갱신
   // ==========================================================================
-  async function loadLiveTopCharts() {
+  function getDetectedOrSavedCountry() {
+    const saved = localStorage.getItem('streamvance_chart_country');
+    if (saved) return saved.toUpperCase();
+
+    // 1단계: 브라우저 시간대 기반 국가 감지
     try {
-      const res = await fetch('/api/charts');
+      const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '').toLowerCase();
+      if (tz.includes('seoul')) return 'KR';
+      if (tz.includes('tokyo')) return 'JP';
+      if (tz.includes('london')) return 'GB';
+      if (tz.includes('new_york') || tz.includes('los_angeles') || tz.includes('chicago') || tz.includes('america')) return 'US';
+    } catch (e) {}
+
+    // 2단계: 브라우저 언어 기반 국가 감지
+    try {
+      const lang = (navigator.language || navigator.userLanguage || '').toLowerCase();
+      if (lang.startsWith('ko')) return 'KR';
+      if (lang.startsWith('ja')) return 'JP';
+      if (lang.startsWith('en-gb')) return 'GB';
+      if (lang.startsWith('en-us') || lang.startsWith('en')) return 'US';
+    } catch (e) {}
+
+    return 'KR'; // 한국 기본 추천
+  }
+
+  let currentChartCountry = getDetectedOrSavedCountry();
+
+  async function loadLiveTopCharts(targetCountry = currentChartCountry) {
+    currentChartCountry = targetCountry;
+    localStorage.setItem('streamvance_chart_country', currentChartCountry);
+
+    // 상단 및 계정 국가 선택 셀렉터 동기화
+    const chartSelect = document.getElementById('chart-country-select');
+    if (chartSelect && chartSelect.value !== currentChartCountry) {
+      chartSelect.value = currentChartCountry;
+    }
+    const accSelect = document.getElementById('account-country-select');
+    if (accSelect && accSelect.value !== currentChartCountry) {
+      accSelect.value = currentChartCountry;
+    }
+
+    const authenticGlobalTop1Fallback = {
+      id: "yt-ekr2nIex040",
+      videoId: "ekr2nIex040",
+      title: "APT.",
+      artist: "로제 (ROSÉ), Bruno Mars",
+      album: "rosie",
+      genre: "k-pop",
+      mood: "energy",
+      duration: 170,
+      cover: "https://i.ytimg.com/vi/ekr2nIex040/maxresdefault.jpg",
+      lyrics: [],
+      isLiked: false
+    };
+
+    try {
+      const res = await fetch(`/api/charts?country=${encodeURIComponent(currentChartCountry)}`);
       if (res.ok) {
         const rawTracks = await res.json();
-        // 8시간 믹스, 컴필레이션, 플레이리스트 모음 영상 엄격 배제 (순수 단일 음원만 선별)
+        // 플레이리스트 모음 및 비음악 엄격 배제 (순수 단일 음원만 선별)
         const chartTracks = Array.isArray(rawTracks) ? rawTracks.filter(t => 
-          (!t.duration || t.duration <= 600) &&
-          !t.isCompilation &&
-          !((t.title || '').includes('플레이리스트') || (t.title || '').includes('노래모음') || (t.title || '').includes('종합차트') || (t.title || '').includes('1시간') || (t.title || '').includes('1hour'))
+          !isCompilationTrack(t) && !isNonMusicTrack(t)
         ) : [];
 
         if (chartTracks.length > 0) {
@@ -616,12 +650,24 @@ function initApp() {
           });
           ui.renderTopCharts(chartTracks);
 
-          // 둘러보기 히어로 배너 GLOBAL TOP 1 동적 갱신 (진짜 실시간 글로벌 1위곡 반영)
-          const top1 = chartTracks[0];
+          // 둘러보기 히어로 배너: 선택된 국가의 1위곡으로 동적 연동
+          const top1 = chartTracks.find(t => !isCompilationTrack(t) && !isNonMusicTrack(t)) || authenticGlobalTop1Fallback;
           const heroBanner = document.getElementById('explore-hero-banner');
+          const heroBadge = document.getElementById('explore-hero-badge');
           const heroTitle = document.getElementById('explore-hero-title');
           const heroDesc = document.getElementById('explore-hero-desc');
           const btnHeroPlay = document.getElementById('btn-hero-play');
+
+          const countryBadgeLabels = {
+            'KR': 'KOREA TOP 1',
+            'GLOBAL': 'GLOBAL TOP 1',
+            'US': 'USA TOP 1',
+            'JP': 'JAPAN TOP 1',
+            'GB': 'UK TOP 1'
+          };
+          if (heroBadge) {
+            heroBadge.textContent = countryBadgeLabels[currentChartCountry] || `${currentChartCountry} TOP 1`;
+          }
 
           if (top1) {
             if (heroBanner) {
@@ -638,12 +684,20 @@ function initApp() {
               }
             }
             if (heroDesc) {
-              heroDesc.textContent = `실시간 글로벌 인기 차트 1위를 질주 중인 '${top1.title}'을 고음질 스트리밍과 실시간 동기화 가사로 즐겨보세요.`;
+              const countryNames = {
+                'KR': '대한민국',
+                'GLOBAL': '글로벌',
+                'US': '미국',
+                'JP': '일본',
+                'GB': '영국'
+              };
+              const cName = countryNames[currentChartCountry] || '실시간';
+              heroDesc.textContent = `${cName} 실시간 인기 차트 1위를 질주 중인 '${top1.title}'을 고음질 스트리밍과 실시간 동기화 가사로 즐겨보세요.`;
             }
             if (btnHeroPlay) {
               btnHeroPlay.onclick = () => {
-                player.setQueue([top1, ...chartTracks.slice(1)], 0, true);
-                ui.showToast(`글로벌 1위곡 '${top1.title}' 재생을 시작합니다.`);
+                player.setQueue([top1, ...chartTracks.filter(t => t.id !== top1.id)], 0, true);
+                ui.showToast(`1위곡 '${top1.title}' 재생을 시작합니다.`);
               };
             }
           }
@@ -655,7 +709,7 @@ function initApp() {
     } catch (e) {
       console.warn("Live charts fetch failed, fallback to default:", e);
     }
-    ui.renderTopCharts(allTracks);
+    ui.renderTopCharts(allTracks.filter(t => !isCompilationTrack(t) && !isNonMusicTrack(t)));
   }
 
   // URL 파라미터(?v=... 또는 ?videoId=...)를 통한 공유 음악 즉시 로드 및 자동 재생
@@ -1477,13 +1531,12 @@ function initApp() {
 
   const syncVideoPosition = () => {
     const persistent = document.getElementById('yt-player-persistent-wrap');
-    const videoWrap = document.getElementById('modal-video-wrap');
     if (!persistent) return;
 
     const isVideoMode = document.body.classList.contains('video-mode-active') && 
                         document.body.classList.contains('player-modal-open');
 
-    if (!isVideoMode || !videoWrap) {
+    if (!isVideoMode) {
       persistent.style.setProperty('position', 'fixed', 'important');
       persistent.style.setProperty('top', '0px', 'important');
       persistent.style.setProperty('left', '0px', 'important');
@@ -1497,32 +1550,62 @@ function initApp() {
       return;
     }
 
-    const rect = videoWrap.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      persistent.style.setProperty('position', 'fixed', 'important');
-      persistent.style.setProperty('top', `${Math.round(rect.top)}px`, 'important');
-      persistent.style.setProperty('left', `${Math.round(rect.left)}px`, 'important');
-      persistent.style.setProperty('width', `${Math.round(rect.width)}px`, 'important');
-      persistent.style.setProperty('height', `${Math.round(rect.height)}px`, 'important');
-      persistent.style.setProperty('transform', 'none', 'important');
-      persistent.style.setProperty('opacity', '1', 'important');
-      persistent.style.setProperty('pointer-events', 'auto', 'important');
-      persistent.style.setProperty('z-index', '999', 'important');
-      persistent.style.setProperty('border-radius', '12px', 'important');
+    const videoWrap = document.getElementById('modal-video-wrap');
+    const stageMedia = document.getElementById('stage-media-wrap');
+    const visualPanel = document.querySelector('.modal-visual-panel');
+
+    let rect = null;
+    if (videoWrap && videoWrap.offsetHeight > 30 && videoWrap.offsetWidth > 30) {
+      rect = videoWrap.getBoundingClientRect();
+    } else if (stageMedia && stageMedia.offsetHeight > 30 && stageMedia.offsetWidth > 30) {
+      rect = stageMedia.getBoundingClientRect();
     }
+
+    let top = 0, left = 0, width = 560, height = 315;
+
+    if (rect && rect.width > 50 && rect.height > 50) {
+      top = Math.round(rect.top);
+      left = Math.round(rect.left);
+      width = Math.round(rect.width);
+      height = Math.round(rect.height);
+    } else if (visualPanel) {
+      const vpRect = visualPanel.getBoundingClientRect();
+      const calcW = Math.max(280, Math.min(vpRect.width - 32, 560));
+      const calcH = Math.round(calcW * 9 / 16);
+      width = calcW;
+      height = calcH;
+      left = Math.round(vpRect.left + (vpRect.width - calcW) / 2);
+      top = Math.round(vpRect.top + 20);
+    } else {
+      width = Math.min(window.innerWidth * 0.9, 560);
+      height = Math.round(width * 9 / 16);
+      left = Math.round((window.innerWidth - width) / 2);
+      top = Math.round(window.innerHeight * 0.2);
+    }
+
+    persistent.style.setProperty('position', 'fixed', 'important');
+    persistent.style.setProperty('top', `${top}px`, 'important');
+    persistent.style.setProperty('left', `${left}px`, 'important');
+    persistent.style.setProperty('width', `${width}px`, 'important');
+    persistent.style.setProperty('height', `${height}px`, 'important');
+    persistent.style.setProperty('transform', 'none', 'important');
+    persistent.style.setProperty('opacity', '1', 'important');
+    persistent.style.setProperty('pointer-events', 'auto', 'important');
+    persistent.style.setProperty('z-index', '999', 'important');
+    persistent.style.setProperty('border-radius', '12px', 'important');
   };
 
-  // 모바일 비디오 위치 자동 추적용 ResizeObserver 바인딩
+  // 비디오 무대 위치 자동 추적용 ResizeObserver 바인딩 (PC & 모바일 공통)
   if (typeof ResizeObserver !== 'undefined') {
     const targetVideoWrap = document.getElementById('modal-video-wrap');
-    if (targetVideoWrap) {
-      const vRo = new ResizeObserver(() => {
-        if (document.body.classList.contains('video-mode-active')) {
-          syncVideoPosition();
-        }
-      });
-      vRo.observe(targetVideoWrap);
-    }
+    const targetStageWrap = document.getElementById('stage-media-wrap');
+    const vRo = new ResizeObserver(() => {
+      if (document.body.classList.contains('video-mode-active')) {
+        syncVideoPosition();
+      }
+    });
+    if (targetVideoWrap) vRo.observe(targetVideoWrap);
+    if (targetStageWrap) vRo.observe(targetStageWrap);
   }
 
   const syncTheaterUI = (isTheater) => {
@@ -1562,6 +1645,132 @@ function initApp() {
 
   const btnModalTheaterToggle = document.getElementById('btn-modal-theater-toggle');
   if (btnModalTheaterToggle) btnModalTheaterToggle.addEventListener('click', toggleTheaterMode);
+
+  const handleTogglePiP = (e) => {
+    if (e) e.stopPropagation();
+    if (window.pipManager && typeof window.pipManager.togglePiP === 'function') {
+      window.pipManager.togglePiP();
+    } else if (typeof pipManager !== 'undefined' && pipManager.togglePiP) {
+      pipManager.togglePiP();
+    }
+  };
+
+  const toggleFullscreen = (e) => {
+    if (e) e.stopPropagation();
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
+      const target = document.documentElement;
+      if (target.requestFullscreen) {
+        target.requestFullscreen().catch(() => {});
+      } else if (target.webkitRequestFullscreen) {
+        target.webkitRequestFullscreen();
+      }
+      ui.showToast('전체화면 모드 (F)');
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+      ui.showToast('전체화면 종료');
+    }
+  };
+
+  const handleFullscreenChange = () => {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    document.body.classList.toggle('is-fullscreen', isFs);
+    const modalEl = ui.dom.fullModal || document.getElementById('full-player-modal');
+    if (modalEl) modalEl.classList.toggle('is-fullscreen', isFs);
+
+    // 전체화면 아이콘 상태 갱신
+    document.querySelectorAll('.icon-fs-max').forEach(el => {
+      el.style.display = isFs ? 'none' : 'block';
+    });
+    document.querySelectorAll('.icon-fs-min').forEach(el => {
+      el.style.display = isFs ? 'block' : 'none';
+    });
+
+    const iconModalFs = document.getElementById('icon-modal-fs');
+    if (iconModalFs) {
+      iconModalFs.setAttribute('data-lucide', isFs ? 'minimize' : 'maximize');
+    }
+    if (window.lucide) window.lucide.createIcons();
+
+    // ESC로 풀든 버튼으로 풀든 동영상/앨범아트 위치 완벽 동기화 (레이아웃 리플로우 다단계 대응)
+    syncVideoPosition();
+    requestAnimationFrame(syncVideoPosition);
+    setTimeout(syncVideoPosition, 40);
+    setTimeout(syncVideoPosition, 100);
+    setTimeout(syncVideoPosition, 250);
+    setTimeout(syncVideoPosition, 450);
+  };
+
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  window.addEventListener('resize', () => {
+    if (document.body.classList.contains('video-mode-active')) {
+      syncVideoPosition();
+    }
+  });
+  window.addEventListener('scroll', () => {
+    if (document.body.classList.contains('video-mode-active')) {
+      syncVideoPosition();
+    }
+  }, { passive: true });
+
+  const btnModalFullscreen = document.getElementById('btn-modal-fullscreen');
+  if (btnModalFullscreen) btnModalFullscreen.addEventListener('click', toggleFullscreen);
+
+  const btnToggleStageFs = document.getElementById('btn-toggle-stage-fs');
+  if (btnToggleStageFs) btnToggleStageFs.addEventListener('click', toggleFullscreen);
+
+  const btnVideoFsCorner = document.getElementById('btn-video-fullscreen-toggle');
+  if (btnVideoFsCorner) btnVideoFsCorner.addEventListener('click', toggleFullscreen);
+
+  // PIP (화면 속 화면 미니 플레이어) 토글 버튼 일괄 연동
+  const pipButtons = [
+    document.getElementById('btn-toggle-pip'),          // 하단 플레이어 바
+    document.getElementById('btn-modal-pip'),           // 풀 플레이어 모달 헤더
+    document.getElementById('btn-toggle-pip-art'),       // 모달 앨범아트 코너
+    document.getElementById('btn-video-pip-toggle')      // 영상 화면 코너
+  ];
+  pipButtons.forEach(btn => {
+    if (btn) btn.addEventListener('click', handleTogglePiP);
+  });
+
+  // 국가 선택 셀렉터 이벤트 리스너 바인딩 (차트 헤더 & 계정 서랍)
+  const onCountryChange = (e) => {
+    const selected = (e.target.value || '').toUpperCase();
+    const countryNames = {
+      'KR': '대한민국',
+      'GLOBAL': '글로벌',
+      'US': '미국',
+      'JP': '일본',
+      'GB': '영국'
+    };
+    ui.showToast(`${countryNames[selected] || selected} 트렌드 차트를 불러오는 중...`);
+    loadLiveTopCharts(selected);
+  };
+
+  const chartCountrySelect = document.getElementById('chart-country-select');
+  if (chartCountrySelect) {
+    chartCountrySelect.addEventListener('change', onCountryChange);
+  }
+
+  const accountCountrySelect = document.getElementById('account-country-select');
+  if (accountCountrySelect) {
+    accountCountrySelect.addEventListener('change', onCountryChange);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+    if (e.key === 'f' || e.key === 'F') {
+      if (document.body.classList.contains('player-modal-open')) {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    }
+  });
 
   const switchMediaMode = (mode) => {
     currentMediaMode = mode;
@@ -2114,70 +2323,6 @@ function initApp() {
     ui.showToast('Streamvance 고객센터: 서비스 이용 및 지원 안내가 활성화되어 있습니다.');
   });
 
-  // 전체화면 토글
-  const btnToggleStageFs = document.getElementById('btn-toggle-stage-fs');
-  if (btnToggleStageFs) {
-    btnToggleStageFs.addEventListener('click', () => {
-      const stage = document.getElementById('stage-media-wrap');
-      if (!document.fullscreenElement) {
-        stage?.requestFullscreen?.().catch(() => {});
-      } else {
-        document.exitFullscreen?.().catch(() => {});
-      }
-    });
-  }
-
-  // 동영상 대형 영상 모드 (Theater Mode) 버튼 (사용자 요청 7번)
-  if (ui.dom.btnVideoTheater) {
-    ui.dom.btnVideoTheater.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const modalEl = ui.dom.fullModal || ui.dom.modal || document.getElementById('full-player-modal');
-      if (!modalEl) return;
-
-      const isTheater = modalEl.classList.toggle('modal-theater-mode');
-      ui.dom.btnVideoTheater.classList.toggle('active', isTheater);
-
-      const expandIcon = ui.dom.btnVideoTheater.querySelector('.theater-icon-expand');
-      const shrinkIcon = ui.dom.btnVideoTheater.querySelector('.theater-icon-shrink');
-      if (expandIcon) expandIcon.style.display = isTheater ? 'none' : 'block';
-      if (shrinkIcon) shrinkIcon.style.display = isTheater ? 'block' : 'none';
-
-      ui.dom.btnVideoTheater.title = isTheater ? '기본 모드로 축소' : '대형 영상 모드 (화면 확대 / 시어터 뷰)';
-      ui.showToast(isTheater ? '대형 영상 모드 (화면 확대)' : '기본 영상 모드로 복귀');
-    });
-  }
-
-  if (ui.dom.btnVideoFs) {
-    ui.dom.btnVideoFs.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const targetFs = document.getElementById('yt-player-persistent-wrap') || document.getElementById('stage-media-wrap');
-      if (!document.fullscreenElement) {
-        targetFs?.requestFullscreen?.().catch(() => {});
-      } else {
-        document.exitFullscreen?.().catch(() => {});
-      }
-    });
-  }
-
-  // 화면 속 화면 (PIP 미니 플레이어) 토글 버튼 (하단 바 및 모달 헤더)
-  const handleTogglePiP = () => {
-    pipManager.togglePiP();
-  };
-
-  const btnTogglePip = document.getElementById('btn-toggle-pip');
-  if (btnTogglePip) {
-    btnTogglePip.addEventListener('click', handleTogglePiP);
-  }
-
-  const btnModalPip = document.getElementById('btn-modal-pip');
-  if (btnModalPip) {
-    btnModalPip.addEventListener('click', handleTogglePiP);
-  }
-
-  const btnTogglePipArt = document.getElementById('btn-toggle-pip-art');
-  if (btnTogglePipArt) {
-    btnTogglePipArt.addEventListener('click', handleTogglePiP);
-  }
 
   // Full Modal Tabs (Up Next, Lyrics, Related)
   document.querySelectorAll('.modal-tab').forEach(tab => {
@@ -3451,13 +3596,7 @@ function initApp() {
     updatePersonalizedQuickPicks();
     if (ui.currentView === 'home') {
       try {
-        const res = await fetch('/api/charts');
-        if (res.ok) {
-          const freshCharts = await res.json();
-          if (freshCharts && freshCharts.length > 0) {
-            ui.renderTopCharts(freshCharts.slice(0, 10));
-          }
-        }
+        await loadLiveTopCharts(currentChartCountry);
       } catch (e) {}
     } else if (ui.currentView === 'library') {
       ui.renderLibrary(ui.currentLibTab || 'playlists');

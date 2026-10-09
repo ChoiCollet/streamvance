@@ -10,10 +10,24 @@ export async function onRequestGet(context) {
   };
 
   const url = new URL(context.request.url);
-  const chartType = (url.searchParams.get('type') || 'global').toLowerCase();
-  const targetPid = (chartType === 'korea' || chartType === 'kpop')
-    ? 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc'
-    : 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM';
+  const countryParam = (url.searchParams.get('country') || '').toUpperCase();
+  const chartType = (url.searchParams.get('type') || '').toLowerCase();
+  
+  let country = countryParam;
+  if (!country) {
+    if (chartType === 'korea' || chartType === 'kpop') country = 'KR';
+    else if (chartType === 'global') country = 'GLOBAL';
+    else country = 'KR';
+  }
+
+  const countryPlaylists = {
+    'KR': 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc',
+    'GLOBAL': 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM',
+    'US': 'PL4fGSI1pDJn6O1LS0XSdF3RyO0Rq_LDeI',
+    'JP': 'PL4fGSI1pDJn6jXS_PEoH9evbcXE4Vo5Ei',
+    'GB': 'PL4fGSI1pDJn5sO_qHQw1O_eK2s5y_V9N_'
+  };
+  const targetPid = countryPlaylists[country] || countryPlaylists['KR'];
 
   // 1. YouTube Innertube Browse API로 공식 차트 재생목록 직접 조회
   try {
@@ -67,16 +81,18 @@ export async function onRequestGet(context) {
             }
           }
 
-          // 믹스/컴필레이션 및 10분 초과 영상 엄격 제외
+          // 믹스/컴필레이션, 10분 초과, 1분 미만 및 차트 모음집 영상 엄격 제외
           const lt = vTitle.toLowerCase();
-          const isComp = vDuration > 600 || ['playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간'].some(k => lt.includes(k));
+          const la = vArtist.toLowerCase();
+          const badKeywords = ['playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '차트둥이', 'top 100', 'top 50', 'top100', 'top50', '음악차트', '연속듣기', 'mix'];
+          const isComp = vDuration > 600 || vDuration < 60 || badKeywords.some(k => lt.includes(k) || la.includes(k));
           if (!isComp) {
             tracks.push({
               id: `yt-${vid}`,
               videoId: vid,
               title: vTitle.replace(/\[(Official|MV|M\/V).*?\]/gi, '').replace(/\((Official|MV|M\/V).*?\)/gi, '').trim(),
               artist: vArtist,
-              album: (chartType === 'korea' || chartType === 'kpop') ? '한국 인기 차트 TOP 100' : '글로벌 인기 차트 TOP 100',
+              album: country === 'KR' ? '한국 인기 차트 TOP 100' : (country === 'GLOBAL' ? '글로벌 인기 차트 TOP 100' : `${country} 인기 차트 TOP 100`),
               genre: 'pop',
               mood: 'all',
               duration: vDuration,
@@ -99,7 +115,14 @@ export async function onRequestGet(context) {
 
   // 2. 폴백 검색
   try {
-    const q = (chartType === 'korea' || chartType === 'kpop') ? 'K-POP 최신 인기곡 MV' : 'Billboard Hot 100 official MV';
+    const fallbackQueries = {
+      'KR': 'K-POP 최신 인기곡 MV',
+      'GLOBAL': 'Billboard Hot 100 official MV',
+      'US': 'Billboard Hot 100 official MV',
+      'JP': 'J-POP 最新 人気曲 MV',
+      'GB': 'UK Top 40 official music video'
+    };
+    const q = fallbackQueries[country] || 'K-POP 최신 인기곡 MV';
     const payload = {
       context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00', hl: 'ko', gl: 'KR' } },
       query: q

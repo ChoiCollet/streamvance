@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Streamvance</title>
   <meta name="description" content="실시간 고음질 음악 스트리밍과 가사를 무료로 감상해보세요.">
+  <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#030303">
   
   <!-- Open Graph & Social Sharing Meta Tags -->
@@ -59,22 +60,14 @@
   <!-- 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 100% 보장) -->
   <div id="yt-player-persistent-wrap" class="yt-player-persistent-wrap">
     <div id="youtube-player-hidden"></div>
-    <!-- 동영상 화면 제어 툴바: 대형 영상 모드, 전체화면 버튼 (유튜브 영상 위에 상시 안전 노출) -->
+    <!-- 동영상 화면 제어 툴바: PIP(화면 속 화면), 전체화면 버튼 (유튜브 영상 위에 상시 안전 노출) -->
     <div class="video-corner-actions" id="video-corner-actions">
-      <button class="art-corner-btn btn-video-theater" id="btn-video-theater" title="대형 영상 모드 (화면 확대 / 시어터 뷰)">
-        <svg class="theater-icon-expand" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-          <polyline points="7 10 7 7 10 7"></polyline>
-          <polyline points="17 14 17 17 14 17"></polyline>
-        </svg>
-        <svg class="theater-icon-shrink" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
-          <rect x="3" y="6" width="18" height="12" rx="2"></rect>
-          <polyline points="10 8 8 8 8 10"></polyline>
-          <polyline points="14 16 16 16 16 14"></polyline>
-        </svg>
+      <button class="art-corner-btn btn-video-pip" id="btn-video-pip-toggle" title="화면 속 화면 (PIP 미니 플레이어)">
+        <i data-lucide="picture-in-picture-2"></i>
       </button>
-      <button class="art-corner-btn btn-video-fs" id="btn-video-fs" title="전체화면">
-        <i data-lucide="maximize"></i>
+      <button class="art-corner-btn btn-video-fs" id="btn-video-fullscreen-toggle" title="전체화면 (F)">
+        <i data-lucide="maximize" class="icon-fs-max"></i>
+        <i data-lucide="minimize" class="icon-fs-min" style="display: none;"></i>
       </button>
     </div>
   </div>
@@ -454,13 +447,23 @@
 
           <!-- 섹션 4: 실시간 인기 TOP 차트 -->
           <div class="section-container">
-            <div class="section-header">
+            <div class="section-header chart-section-header">
               <div>
                 <span class="section-subtitle">YouTube 실시간 인기 음악 트렌드</span>
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                   <h2 class="section-title">실시간 TOP 차트</h2>
                   <span class="badge-live-pulse"><span class="pulse-dot"></span>LIVE 실시간</span>
                 </div>
+              </div>
+              <div class="chart-country-select-wrapper" id="chart-country-wrapper">
+                <i data-lucide="globe" class="chart-country-icon"></i>
+                <select id="chart-country-select" class="chart-country-select" aria-label="차트 국가 선택">
+                  <option value="KR">🇰🇷 대한민국</option>
+                  <option value="GLOBAL">🌍 글로벌 (전 세계)</option>
+                  <option value="US">🇺🇸 미국</option>
+                  <option value="JP">🇯🇵 일본</option>
+                  <option value="GB">🇬🇧 영국</option>
+                </select>
               </div>
             </div>
 
@@ -576,7 +579,7 @@
           </div>
           <div class="artist-hero-section">
             <div class="artist-hero-avatar-wrap">
-              <img src="" alt="아티스트" id="artist-hero-avatar" class="artist-hero-avatar" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+              <img referrerpolicy="no-referrer" src="" alt="아티스트" id="artist-hero-avatar" class="artist-hero-avatar" onerror="this.onerror=null;if(typeof window.handleArtistImgError==='function'){window.handleArtistImgError(this);}">
             </div>
             <div class="artist-hero-meta">
               <div class="artist-hero-badge">
@@ -668,7 +671,7 @@
         <!-- 2. 중앙: 현재 곡 정보 & 리액션 버튼 ([Cover] Title / Artist • Album  👎 👍 ⋮) -->
         <div class="player-track-info" id="player-track-info">
           <div class="player-cover-wrapper">
-            <img src="" alt="Album Cover" id="player-cover-img" class="player-cover-img">
+            <img referrerpolicy="no-referrer" src="" alt="Album Cover" id="player-cover-img" class="player-cover-img" onload="if(typeof window.validateTrackImg==='function')window.validateTrackImg(this);" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
             <div class="audio-equalizer-bars" id="audio-eq-bars">
               <span class="bar"></span>
               <span class="bar"></span>
@@ -754,6 +757,13 @@
         </div>
 
         <div class="modal-header-right-actions">
+          <button class="icon-btn-modal" id="btn-modal-theater-toggle" title="대형 영상 모드 (화면 확대 / 시어터 뷰)">
+            <i data-lucide="expand" class="theater-icon-expand"></i>
+            <i data-lucide="minimize-2" class="theater-icon-shrink" style="display: none;"></i>
+          </button>
+          <button class="icon-btn-modal" id="btn-modal-fullscreen" title="전체화면 (F)">
+            <i data-lucide="maximize" id="icon-modal-fs"></i>
+          </button>
           <button class="icon-btn-modal" id="btn-modal-sleep-mode" title="화면 끄기 (OLED 절전 슬립 모드)">
             <i data-lucide="moon"></i>
           </button>
@@ -773,15 +783,19 @@
           <div class="stage-media-wrap" id="stage-media-wrap">
             <!-- Song 모드: 고화질 정사각 앨범 커버 (우측 상단 전체화면 도구) -->
             <div class="modal-album-art-wrap" id="modal-album-art-wrap">
-              <img src="" alt="Album Art" id="modal-album-art" class="modal-album-art">
-              <div class="art-corner-actions">
-                <button class="art-corner-btn" id="btn-toggle-stage-fs" title="전체화면">
-                  <i data-lucide="maximize"></i>
+              <img referrerpolicy="no-referrer" src="" alt="Album Art" id="modal-album-art" class="modal-album-art" onload="if(typeof window.validateTrackImg==='function')window.validateTrackImg(this);" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+              <div class="art-corner-actions" id="art-corner-actions">
+                <button class="art-corner-btn" id="btn-toggle-pip-art" title="화면 속 화면 (PIP 미니 플레이어)">
+                  <i data-lucide="picture-in-picture-2"></i>
+                </button>
+                <button class="art-corner-btn" id="btn-toggle-stage-fs" title="전체화면 (F)">
+                  <i data-lucide="maximize" class="icon-fs-max"></i>
+                  <i data-lucide="minimize" class="icon-fs-min" style="display: none;"></i>
                 </button>
               </div>
             </div>
 
-            <!-- Video 모드: 광고 없이 실시간 가사와 완벽 동기화되는 유튜브 플레이어 플레이스홀더 -->
+            <!-- Video 모드: 광고 없이 실시간 가사와 완벽 동기화되는 유튜브 플레이어 앵커 영역 -->
             <div class="modal-video-wrap" id="modal-video-wrap"></div>
 
             <!-- 실시간 동기화 자막 (가사 CC) 오버레이 -->
@@ -1334,6 +1348,17 @@
             <i data-lucide="users"></i>
             <span>계정 전환</span>
           </button>
+          <div class="account-menu-item account-country-row" style="cursor: default;">
+            <i data-lucide="globe"></i>
+            <span style="flex: 1;">추천 및 차트 국가</span>
+            <select id="account-country-select" class="account-country-select" aria-label="계정 콘텐츠 국가 설정">
+              <option value="KR">🇰🇷 대한민국</option>
+              <option value="GLOBAL">🌍 글로벌</option>
+              <option value="US">🇺🇸 미국</option>
+              <option value="JP">🇯🇵 일본</option>
+              <option value="GB">🇬🇧 영국</option>
+            </select>
+          </div>
           <button class="account-menu-item" id="account-item-settings">
             <i data-lucide="settings"></i>
             <span>설정</span>

@@ -72,12 +72,27 @@ function isNonMusic(title, channel) {
     'lecture', '강의', '설교', 'study with me',
     '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
     '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
-    '하이라이트', 'highlight', '선공개', '예고편'
+    '하이라이트', 'highlight', '선공개', '예고편',
+    '사장님도 대답', '대답!', '썰', '상황극', '더빙', '쇼츠', 'shorts', '개그', '애니', '만화', '상담'
   ];
   for (const nmg of nonMusicGeneral) {
     if (lt.includes(nmg) && !hasTitleMusicGuard) {
       return true;
     }
+  }
+
+  // 3. 개인 크리에이터/버튜버/가수의 비음악 영상 가드:
+  // 공식 음원 채널(- Topic)이나 주요 음반사가 아닌 일반 채널 영상인데 제목에 음악 관련 단어가 전혀 없는 경우 배제
+  const musicEssentialKeywords = [
+    'mv', 'm/v', 'music video', 'official', 'audio', '음원', '노래', '곡',
+    'cover', '커버', 'single', 'album', 'song', 'track', 'feat', 'prod',
+    'ost', 'remix', 'live', 'band', '우타이테', '가사', 'lyrics', 'orchestra', '|'
+  ];
+  const isOfficialChannel = lc.includes('- topic') || OFFICIAL_LABELS.some(lbl => lc.includes(lbl));
+  const hasAnyMusicWord = musicEssentialKeywords.some(mw => lt.includes(mw));
+
+  if (!isOfficialChannel && !hasAnyMusicWord && !hasTitleMusicGuard) {
+    return true;
   }
 
   return false;

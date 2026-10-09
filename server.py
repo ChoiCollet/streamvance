@@ -47,40 +47,67 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(playlist_data)
             return
 
-        # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts?type=global|korea
+        # 실시간 유튜브 인기 차트 API 엔드포인트: /api/charts?country=KR|GLOBAL|US|JP|GB&type=...
         if parsed.path == '/api/charts':
             query_params = urllib.parse.parse_qs(parsed.query)
-            chart_type = query_params.get('type', ['global'])[0].strip().lower()
+            country = query_params.get('country', [''])[0].strip().upper()
+            chart_type = query_params.get('type', [''])[0].strip().lower()
 
-            # YouTube Music 공식 Top 100 차트 재생목록 ID
-            # 글로벌 인기 뮤직비디오 Top 100: PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM
-            # 한국 인기 뮤직비디오 Top 100: PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc
-            target_pid = 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc' if chart_type in ('korea', 'kpop') else 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM'
+            # 국가 파라미터 매핑 및 기본값
+            if not country:
+                if chart_type in ('korea', 'kpop'):
+                    country = 'KR'
+                elif chart_type == 'global':
+                    country = 'GLOBAL'
+                else:
+                    country = 'KR' # 기본 대한민국
+
+            # YouTube Music 공식 국가별 인기 뮤직비디오 Top 100 차트 재생목록 ID
+            country_playlists = {
+                'KR': 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc',  # 한국 인기 뮤직비디오 Top 100
+                'GLOBAL': 'PL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM', # 글로벌 인기 뮤직비디오 Top 100
+                'US': 'PL4fGSI1pDJn6O1LS0XSdF3RyO0Rq_LDeI',  # 미국 인기 뮤직비디오 Top 100
+                'JP': 'PL4fGSI1pDJn6jXS_PEoH9evbcXE4Vo5Ei',  # 일본 인기 뮤직비디오 Top 100
+                'GB': 'PL4fGSI1pDJn5sO_qHQw1O_eK2s5y_V9N_'   # 영국 인기 뮤직비디오 Top 100
+            }
+            target_pid = country_playlists.get(country, country_playlists['KR'])
 
             playlist_data = self.fetch_youtube_playlist(target_pid)
             tracks = playlist_data.get('tracks', [])
 
-            # 컴필레이션, 10분 초과 믹스, 노래모음/플레이리스트 영상 엄격 배제 (정품 단일 음원만 선별)
+            # 컴필레이션, 10분 초과 믹스, 노래모음/플레이리스트/차트둥이 영상 엄격 배제 (정품 단일 음원만 선별)
+            bad_chart_keywords = [
+                'playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '연속듣기',
+                '차트둥이', 'top 100', 'top 50', 'top100', 'top50', '인기곡 모음', '듣기', '전곡', 'mix', '음악차트'
+            ]
             clean_tracks = [
                 t for t in tracks
-                if t.get('duration', 0) <= 600 and not any(k in (t.get('title') or '').lower() for k in [
-                    'playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '연속듣기'
-                ])
+                if 60 <= t.get('duration', 0) <= 600 and
+                not any(k in (t.get('title') or '').lower() for k in bad_chart_keywords) and
+                not any(k in (t.get('artist') or '').lower() for k in ['차트둥이', '노래모음', '플레이리스트'])
             ]
 
-            # 1차 공식 재생목록 폴백: Billboard Hot 100 공식 재생목록
+            # 1차 공식 재생목록 폴백 (해당 국가 차트 실패 시 글로벌/빌보드)
             if not clean_tracks:
-                bb_data = self.fetch_youtube_playlist('PLRXkxxi5lXuVwmF2g9_D1O7aI3L0lHkdQ')
+                fallback_pid = 'PLRXkxxi5lXuVwmF2g9_D1O7aI3L0lHkdQ' if country in ('GLOBAL', 'US') else 'PL4fGSI1pDJn5S09aId3dUGp40ygUqmPGc'
+                bb_data = self.fetch_youtube_playlist(fallback_pid)
                 clean_tracks = [
                     t for t in bb_data.get('tracks', [])
-                    if t.get('duration', 0) <= 600 and not any(k in (t.get('title') or '').lower() for k in [
-                        'playlist', '플레이리스트', '노래모음', '모음집', '종합차트', '1시간', '1hour', '연속듣기'
-                    ])
+                    if 60 <= t.get('duration', 0) <= 600 and
+                    not any(k in (t.get('title') or '').lower() for k in bad_chart_keywords) and
+                    not any(k in (t.get('artist') or '').lower() for k in ['차트둥이', '노래모음', '플레이리스트'])
                 ]
 
-            # 2차 검색 폴백 (정품 songs 단일 음원만 엄선)
+            # 2차 검색 폴백 (국가별 정품 songs 단일 음원 엄선)
             if not clean_tracks:
-                search_q = 'K-POP 최신 인기곡 M/V' if chart_type in ('korea', 'kpop') else 'Billboard Hot 100 official MV'
+                fallback_queries = {
+                    'KR': 'K-POP 최신 인기곡 M/V',
+                    'GLOBAL': 'Billboard Hot 100 official MV',
+                    'US': 'Billboard Hot 100 official MV',
+                    'JP': 'J-POP 最新 人気曲 MV',
+                    'GB': 'UK Top 40 official music video'
+                }
+                search_q = fallback_queries.get(country, 'K-POP 최신 인기곡 M/V')
                 search_res = self.search_youtube(search_q)
                 clean_tracks = [
                     s for s in search_res.get('songs', [])
@@ -231,7 +258,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             if gk in lower_title and not has_title_music_guard:
                 return True
 
-        # 2. 비음악 스트리밍 / 잡담 / 일상 / 예능 / 다시보기 / 클립
+        # 2. 비음악 스트리밍 / 잡담 / 일상 / 예능 / 다시보기 / 클립 / 밈 / 토크 영상 차단
         non_music_general = [
             '다시보기', '생방송', '라이브 다시보기', '풀영상', '방송 풀영상', '전체 다시보기',
             '클립', '핫클립', '클립영상', '영도', '영상도네',
@@ -246,11 +273,26 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             'lecture', '강의', '설교', 'study with me',
             '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
             '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
-            '하이라이트', 'highlight', '선공개', '예고편'
+            '하이라이트', 'highlight', '선공개', '예고편',
+            '사장님도 대답', '대답!', '썰', '상황극', '더빙', '쇼츠', 'shorts', '개그', '애니', '만화', '상담'
         ]
         for nmg in non_music_general:
             if nmg in lower_title and not has_title_music_guard:
                 return True
+
+        # 3. 개인 크리에이터/버튜버/가수의 비음악 영상 가드:
+        # 공식 음원 채널(- Topic)이나 주요 음반사가 아닌 일반 채널 영상인데 제목에 음악 관련 단어가 전혀 없는 경우 배제
+        music_essential_keywords = [
+            'mv', 'm/v', 'music video', 'official', 'audio', '음원', '노래', '곡',
+            'cover', '커버', 'single', 'album', 'song', 'track', 'feat', 'prod',
+            'ost', 'remix', 'live', 'band', '우타이테', '가사', 'lyrics', 'orchestra', '|'
+        ]
+        is_official_channel = ('- topic' in lower_channel) or any(lbl in lower_channel for lbl in self.OFFICIAL_LABELS)
+        has_any_music_word = any(mw in lower_title for mw in music_essential_keywords)
+
+        if not is_official_channel and not has_any_music_word and not has_title_music_guard:
+            # 순수 토크/소통/단순 잡담 영상으로 판단하여 음악 검색 및 추천에서 제외
+            return True
 
         return False
 
