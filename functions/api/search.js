@@ -30,31 +30,56 @@ function isNonMusic(title, channel) {
   const lt = (title || '').toLowerCase();
   const lc = (channel || '').toLowerCase();
 
+  // 음원/노래/커버 가드 (영상 제목에 명시적으로 음악 관련 키워드가 있는 경우만 가드로 인정)
   const musicGuards = [
-    'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics', '- topic', '노래',
-    'cover', '커버', 'live cover', '우타이테', '발묘', '출항', '스텔라이브', 'song', 'sing'
+    'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics',
+    'cover', '커버', 'live cover', '우타이테', 'original song', '오리지널 곡',
+    '음원', '노래방', 'karaoke', 'special clip', 'visualizer', 'dance practice', '응원법'
   ];
-  const hasMusicGuard = musicGuards.some(mg => lt.includes(mg) || lc.includes(mg));
+  const hasTitleMusicGuard = musicGuards.some(mg => lt.includes(mg));
 
-  for (const strictKw of ['reaction', '리액션', '먹방', 'mukbang', '뉴스', 'news']) {
-    if ((lt.includes(strictKw) || lc.includes(strictKw)) && !hasMusicGuard) return true;
+  // 1. 게임 / 게임방송 / 게임플레이 / 게임대회 관련 키워드 (제목에 포함 시 음악 가드가 없으면 무조건 차단)
+  const gameKeywords = [
+    '마인크래프트', '마크', 'minecraft',
+    '발로란트', 'valorant',
+    '오버워치', 'overwatch',
+    '배틀그라운드', '배그', 'pubg',
+    '리그오브레전드', '롤', 'lol', '솔랭', '자랭', '칼바람',
+    '스팀게임', '스팀', 'steam',
+    '종합게임', '종겜', '게임플레이', 'gameplay', 'walkthrough', 'playthrough',
+    '공략', '모바일게임', '게임 실황', '게임 방송', '게임대회', '스크림',
+    '원신', '붕괴', '스타레일', '메이플', '로스트아크', '로아', '던파', '피파', 'fc온라인',
+    '철권', '에이펙스', 'apex legends', '사이버펑크', '동물의숲', '포켓몬'
+  ];
+  for (const gk of gameKeywords) {
+    if (lt.includes(gk) && !hasTitleMusicGuard) {
+      return true;
+    }
   }
 
-  const nonMusicKeywords = [
+  // 2. 비음악 스트리밍 / 잡담 / 일상 / 예능 / 다시보기 / 클립
+  const nonMusicGeneral = [
+    '다시보기', '생방송', '라이브 다시보기', '풀영상', '방송 풀영상', '전체 다시보기',
+    '클립', '핫클립', '클립영상', '영도', '영상도네',
+    '잡담', '저챗', '저스트채팅', '저스트 채팅', '소통방송', '소통',
+    '이상형월드컵', '이상형 월드컵', '월드컵',
+    'q&a', '질문답변', 'qna',
+    '브이로그', 'vlog',
+    '먹방', 'mukbang', '쿡방', '요리', 'cook',
+    'reaction', '리액션', '리액트', 'reacts',
     'review', '리뷰', 'unboxing', '언박싱', '사용기',
-    'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
-    'ytn', '기자', '정치', '시사',
+    'news', '뉴스', '속보', 'ytn', '기자', '정치', '시사',
     'lecture', '강의', '설교', 'study with me',
     '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
     '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
     '하이라이트', 'highlight', '선공개', '예고편'
   ];
-
-  for (const kw of nonMusicKeywords) {
-    if (lt.includes(kw) || lc.includes(kw)) {
-      if (!hasMusicGuard) return true;
+  for (const nmg of nonMusicGeneral) {
+    if (lt.includes(nmg) && !hasTitleMusicGuard) {
+      return true;
     }
   }
+
   return false;
 }
 

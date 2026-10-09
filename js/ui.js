@@ -1435,12 +1435,13 @@ export class UIManager {
       }
     }
 
+    if (modalLikeCountEl) {
+      modalLikeCountEl.textContent = '';
+      modalLikeCountEl.style.display = 'none';
+    }
+
     if (!videoId) {
       if (likeCountEl) likeCountEl.textContent = '좋아요';
-      if (modalLikeCountEl) {
-        modalLikeCountEl.textContent = '';
-        modalLikeCountEl.style.display = 'none';
-      }
       if (barLikeCountEl) {
         barLikeCountEl.textContent = '';
         barLikeCountEl.style.display = 'none';
@@ -1461,17 +1462,12 @@ export class UIManager {
         const data = await res.json();
         if (data.likeCount && data.likeCount !== '좋아요') {
           if (likeCountEl) likeCountEl.textContent = data.likeCount;
-          if (modalLikeCountEl) {
-            modalLikeCountEl.textContent = data.likeCount;
-            modalLikeCountEl.style.display = 'inline-block';
-          }
           if (barLikeCountEl) {
             barLikeCountEl.textContent = data.likeCount;
             barLikeCountEl.style.display = 'inline-block';
           }
         } else {
           if (likeCountEl) likeCountEl.textContent = '좋아요';
-          if (modalLikeCountEl) modalLikeCountEl.style.display = 'none';
           if (barLikeCountEl) barLikeCountEl.style.display = 'none';
         }
 

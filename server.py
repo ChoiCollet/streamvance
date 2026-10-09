@@ -107,6 +107,38 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 pass
             return
 
+        # / 또는 /index.html 요청 시 동적 OG 태그 (?v=...) 주입
+        if parsed.path in ('', '/', '/index.html'):
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('v', [''])[0].strip()
+            index_path = os.path.join(DIRECTORY, 'index.html')
+            if os.path.isfile(index_path):
+                with open(index_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                if vid and re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
+                    thumb_url = f'https://i.ytimg.com/vi/{vid}/hqdefault.jpg'
+                    html_content = re.sub(
+                        r'<meta property="og:image" content="[^"]*">',
+                        f'<meta property="og:image" content="{thumb_url}">',
+                        html_content
+                    )
+                    html_content = re.sub(
+                        r'<meta name="twitter:image" content="[^"]*">',
+                        f'<meta name="twitter:image" content="{thumb_url}">',
+                        html_content
+                    )
+                html_bytes = html_content.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(html_bytes)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                try:
+                    self.wfile.write(html_bytes)
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                    pass
+                return
+
         # 일반 정적 파일 서빙
         return super().do_GET()
 
@@ -134,37 +166,55 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             print(f"Error sending json: {e}", file=sys.stderr)
 
     def is_non_music(self, title, channel):
-        lower_title = title.lower()
-        lower_channel = channel.lower()
+        lower_title = (title or '').lower()
+        lower_channel = (channel or '').lower()
 
-        # 커버곡, 우타이테, 라이브 커버, 버튜버 곡 등은 절대 차단되지 않도록 강력한 가드
+        # 음원/노래/커버 가드 (영상 제목에 명시적으로 음악 관련 키워드가 있는 경우만 가드로 인정)
         music_guards = [
-            'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics', '- topic', '노래',
-            'cover', '커버', 'live cover', '우타이테', '발묘', '출항', '스텔라이브', 'song', 'sing'
+            'official mv', 'm/v', 'mv', 'official audio', '가사', 'lyrics',
+            'cover', '커버', 'live cover', '우타이테', 'original song', '오리지널 곡',
+            '음원', '노래방', 'karaoke', 'special clip', 'visualizer', 'dance practice', '응원법'
         ]
-        has_music_guard = any(mg in lower_title or mg in lower_channel for mg in music_guards)
+        has_title_music_guard = any(mg in lower_title for mg in music_guards)
 
-        non_music_keywords = [
+        # 1. 게임 / 게임방송 / 게임플레이 / 게임대회 관련 키워드 (제목에 포함 시 음악 가드가 없으면 무조건 차단)
+        game_keywords = [
+            '마인크래프트', '마크', 'minecraft',
+            '발로란트', 'valorant',
+            '오버워치', 'overwatch',
+            '배틀그라운드', '배그', 'pubg',
+            '리그오브레전드', '롤', 'lol', '솔랭', '자랭', '칼바람',
+            '스팀게임', '스팀', 'steam',
+            '종합게임', '종겜', '게임플레이', 'gameplay', 'walkthrough', 'playthrough',
+            '공략', '모바일게임', '게임 실황', '게임 방송', '게임대회', '스크림',
+            '원신', '붕괴', '스타레일', '메이플', '로스트아크', '로아', '던파', '피파', 'fc온라인',
+            '철권', '에이펙스', 'apex legends', '사이버펑크', '동물의숲', '포켓몬'
+        ]
+        for gk in game_keywords:
+            if gk in lower_title and not has_title_music_guard:
+                return True
+
+        # 2. 비음악 스트리밍 / 잡담 / 일상 / 예능 / 다시보기 / 클립
+        non_music_general = [
+            '다시보기', '생방송', '라이브 다시보기', '풀영상', '방송 풀영상', '전체 다시보기',
+            '클립', '핫클립', '클립영상', '영도', '영상도네',
+            '잡담', '저챗', '저스트채팅', '저스트 채팅', '소통방송', '소통',
+            '이상형월드컵', '이상형 월드컵', '월드컵',
+            'q&a', '질문답변', 'qna',
+            '브이로그', 'vlog',
+            '먹방', 'mukbang', '쿡방', '요리', 'cook',
             'reaction', '리액션', '리액트', 'reacts',
-            'vlog', '브이로그', '먹방', 'mukbang', '요리', 'cook',
             'review', '리뷰', 'unboxing', '언박싱', '사용기',
-            'gameplay', 'walkthrough', 'playthrough', '공략', '롤', '배그',
             'news', '뉴스', '속보', 'ytn', '기자', '정치', '시사',
             'lecture', '강의', '설교', 'study with me',
             '토크', '팟캐스트', 'podcast', '인터뷰', 'interview', '무대인사', '시사회',
             '출근길', '퇴근길', 'behind the scene', 'making of', '메이킹',
             '하이라이트', 'highlight', '선공개', '예고편'
         ]
-
-        # 순수 리액션, 먹방, 뉴스는 가드가 있어도 제외 (단, 커버곡이나 음원 관련은 허용)
-        for strict_kw in ['reaction', '리액션', '먹방', 'mukbang', '뉴스', 'news']:
-            if (strict_kw in lower_title or strict_kw in lower_channel) and not has_music_guard:
+        for nmg in non_music_general:
+            if nmg in lower_title and not has_title_music_guard:
                 return True
 
-        for kw in non_music_keywords:
-            if kw in lower_title or kw in lower_channel:
-                if not has_music_guard:
-                    return True
         return False
 
     OFFICIAL_LABELS = [

@@ -2130,9 +2130,9 @@ a {
   transform: scale(1.08);
 }
 
-/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷 백그라운드 재생 100% 보장 엔진)
-   삼성인터넷 [백그라운드 재생: 켜기] 감지 조건(실제 비디오 규격 200px 이상, opacity: 1)을 100% 충족하면서,
-   앱 배경(#030303) 뒷단(z-index: 0)에 완벽 은폐 배치하여 하단 [홈] 버튼이나 어떤 모바일 UI도 절대 가리지 않음! */
+/* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 최적화 엔진)
+   비가시 상태(Song 모드/미니 플레이어)에서는 최상위 z-index(9999) 및 극미량 투명도(opacity: 0.001)로 배치하여
+   브라우저 합성기의 오클루전(Occlusion/가림) 감지를 완벽 우회하면서도 사용자 눈에는 100% 무노출, 터치 무간섭(pointer-events: none) 보장! */
 .yt-player-persistent-wrap {
   position: fixed !important;
   top: 0 !important;
@@ -2140,15 +2140,15 @@ a {
   bottom: auto !important;
   width: 320px !important;
   height: 240px !important;
-  z-index: 0 !important;
-  opacity: 1 !important;
+  z-index: 9999 !important;
+  opacity: 0.001 !important;
   pointer-events: none !important;
   overflow: hidden !important;
-  background: #000 !important;
+  background: transparent !important;
   border: none !important;
   clip-path: none !important;
   visibility: visible !important;
-  transition: none !important;
+  transition: opacity 0.2s ease !important;
 }
 
 .yt-player-persistent-wrap iframe,
@@ -2159,15 +2159,8 @@ a {
   display: block !important;
 }
 
-/* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 자연스럽게 확대 배치 (클리핑 해제 및 z-index 999로 가시성 100% 보장) */
+/* 동영상 모드 활성화 시: 전체화면 모달 중앙 무대로 선명하게 표시 (가로세로 중앙 정렬) */
 body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
-  top: calc(var(--header-height, 64px) + 24px) !important;
-  left: 50% !important;
-  bottom: auto !important;
-  transform: translateX(-50%) !important;
-  width: min(90vw, 540px) !important;
-  aspect-ratio: 16 / 9 !important;
-  height: auto !important;
   z-index: 999 !important;
   opacity: 1 !important;
   pointer-events: auto !important;
@@ -2176,39 +2169,56 @@ body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
 }
 
-@media (max-width: 768px) {
-  body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
-    top: calc(var(--header-height, 56px) + 16px) !important;
-    width: calc(100vw - 32px) !important;
-    clip-path: none !important;
-    z-index: 999 !important;
-    aspect-ratio: 16 / 9 !important;
-  }
+/* 동영상 제어 툴바 (대형 영상 모드, 전체화면 버튼) - 영상 위에 상시 안전 노출 */
+.video-corner-actions {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  display: none !important;
+  align-items: center !important;
+  gap: 8px !important;
+  z-index: 1000 !important;
+  pointer-events: auto !important;
+}
 
-  /* 모바일 대형 영상 모드 클릭 시 1:1 비율 대형 사이즈 (사용자 요청) */
-  body.player-modal-open.video-mode-active.modal-theater-mode .yt-player-persistent-wrap {
-    width: min(92vw, 420px) !important;
-    aspect-ratio: 1 / 1 !important;
-    height: auto !important;
-  }
+body.player-modal-open.video-mode-active .video-corner-actions {
+  display: flex !important;
+}
+
+.video-corner-actions .art-corner-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 50% !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(8px) !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6) !important;
+  transition: all 0.2s ease !important;
+  pointer-events: auto !important;
+}
+
+.video-corner-actions .art-corner-btn:hover {
+  background: rgba(0, 0, 0, 0.95) !important;
+  transform: scale(1.08) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
 }
 
 .modal-video-wrap {
   display: none !important;
 }
 
-body.player-modal-open.video-mode-active .modal-video-wrap {
+.modal-video-wrap.active {
   display: block !important;
-  position: relative !important;
   width: 100% !important;
-  max-width: 540px !important;
   aspect-ratio: 16 / 9 !important;
-  z-index: 601 !important;
-  pointer-events: none !important;
-}
-
-body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions {
-  pointer-events: auto !important;
+  border-radius: 12px !important;
+  margin: 0 auto !important;
+  visibility: hidden !important; /* persistent iframe 정밀 좌표 정렬용 앵커 */
 }
 
 .modal-track-info-row {
@@ -2972,6 +2982,10 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
     max-width: min(76vw, 310px);
     width: 100%;
     margin: 0 auto;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .modal-album-art-wrap {
@@ -5324,26 +5338,30 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
   white-space: nowrap !important;
   overflow: visible !important;
   text-overflow: clip !important;
-  animation: titleMarqueeOneWay 7.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite !important;
+  animation: titleMarqueeOneWay 7.5s linear infinite !important;
   will-change: transform, opacity;
 }
 
 @keyframes titleMarqueeOneWay {
-  0%, 18% {
+  0%, 15% {
     transform: translateX(0);
     opacity: 1;
   }
-  78%, 88% {
+  85% {
     transform: translateX(var(--marquee-distance, -60px));
     opacity: 1;
   }
-  88.01% {
+  88% {
+    transform: translateX(var(--marquee-distance, -60px));
     opacity: 0;
-    transform: translateX(0);
   }
-  92%, 100% {
-    opacity: 1;
+  90% {
     transform: translateX(0);
+    opacity: 0;
+  }
+  95%, 100% {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -6741,11 +6759,7 @@ body.player-modal-open.video-mode-active .modal-video-wrap .video-corner-actions
 }
 
 .modal-like-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: inherit;
-  margin-left: 5px;
-  display: inline-block;
+  display: none !important;
 }
 
 

@@ -1355,6 +1355,43 @@ function initApp() {
   // 9. Full Modal Player Expand / Collapse & Song/Video Mode
   let currentMediaMode = 'song'; // 'song' | 'video'
 
+  const syncVideoPosition = () => {
+    const persistent = document.getElementById('yt-player-persistent-wrap');
+    const videoWrap = document.getElementById('modal-video-wrap');
+    if (!persistent) return;
+
+    const isVideoMode = document.body.classList.contains('video-mode-active') && 
+                        document.body.classList.contains('player-modal-open');
+
+    if (!isVideoMode || !videoWrap) {
+      persistent.style.position = 'fixed';
+      persistent.style.top = '0px';
+      persistent.style.left = '0px';
+      persistent.style.width = '320px';
+      persistent.style.height = '240px';
+      persistent.style.transform = 'none';
+      persistent.style.opacity = '0.001';
+      persistent.style.pointerEvents = 'none';
+      persistent.style.zIndex = '9999';
+      persistent.style.borderRadius = '0px';
+      return;
+    }
+
+    const rect = videoWrap.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      persistent.style.position = 'fixed';
+      persistent.style.top = `${rect.top}px`;
+      persistent.style.left = `${rect.left}px`;
+      persistent.style.width = `${rect.width}px`;
+      persistent.style.height = `${rect.height}px`;
+      persistent.style.transform = 'none';
+      persistent.style.opacity = '1';
+      persistent.style.pointerEvents = 'auto';
+      persistent.style.zIndex = '999';
+      persistent.style.borderRadius = '12px';
+    }
+  };
+
   const syncTheaterUI = (isTheater) => {
     const modalEl = ui.dom.fullModal || document.getElementById('full-player-modal');
     if (modalEl) modalEl.classList.toggle('modal-theater-mode', isTheater);
@@ -1377,6 +1414,8 @@ function initApp() {
       ui.dom.btnVideoTheater.title = isTheater ? '기본 모드로 축소' : '대형 영상 모드 (화면 확대 / 시어터 뷰)';
     }
     if (window.lucide) window.lucide.createIcons();
+    syncVideoPosition();
+    setTimeout(syncVideoPosition, 100);
   };
 
   const toggleTheaterMode = (e) => {
@@ -1411,6 +1450,10 @@ function initApp() {
       videoWrap?.classList.add('active');
       document.body.classList.add('video-mode-active');
       if (btnModalTheater) btnModalTheater.style.display = 'inline-flex';
+      requestAnimationFrame(() => {
+        syncVideoPosition();
+      });
+      setTimeout(syncVideoPosition, 80);
     } else {
       btnSong?.classList.add('active');
       btnVideo?.classList.remove('active');
@@ -1419,8 +1462,16 @@ function initApp() {
       document.body.classList.remove('video-mode-active');
       if (btnModalTheater) btnModalTheater.style.display = 'none';
       syncTheaterUI(false);
+      syncVideoPosition();
     }
   };
+
+  window.addEventListener('resize', syncVideoPosition);
+  window.addEventListener('orientationchange', syncVideoPosition);
+  const modalBodyEl = document.querySelector('.full-player-modal .modal-body');
+  if (modalBodyEl) {
+    modalBodyEl.addEventListener('scroll', syncVideoPosition, { passive: true });
+  }
 
   const btnModeSong = document.getElementById('btn-mode-song');
   if (btnModeSong) btnModeSong.addEventListener('click', () => switchMediaMode('song'));
@@ -1477,6 +1528,7 @@ function initApp() {
       btnExpandPlayer.classList.remove('active');
     }
     if (window.lucide) window.lucide.createIcons();
+    syncVideoPosition();
   }
 
   // 모바일 안드로이드/제스처 뒤로가기 시 모달 닫기
@@ -1957,9 +2009,9 @@ function initApp() {
   if (ui.dom.btnVideoFs) {
     ui.dom.btnVideoFs.addEventListener('click', (e) => {
       e.stopPropagation();
-      const videoWrap = document.getElementById('modal-video-wrap') || document.getElementById('stage-media-wrap');
+      const targetFs = document.getElementById('yt-player-persistent-wrap') || document.getElementById('stage-media-wrap');
       if (!document.fullscreenElement) {
-        videoWrap?.requestFullscreen?.().catch(() => {});
+        targetFs?.requestFullscreen?.().catch(() => {});
       } else {
         document.exitFullscreen?.().catch(() => {});
       }

@@ -225,67 +225,10 @@ export class AudioPlayer {
       console.warn("Web Worker keepalive setup fallback:", e);
     }
 
-    // [우회 2단계: 모바일 OS 사운드 칩셋 하드웨어 오디오 클록 앵커]
-    // Android AudioFlinger에 활성 오디오 파이프라인을 등록하여 브라우저 프로세스 강제 절전 방어
-    try {
-      const sampleRate = 44100;
-      const numSamples = sampleRate; // 1 second
-      const buffer = new ArrayBuffer(44 + numSamples * 2);
-      const view = new DataView(buffer);
-      const writeString = (offset, string) => {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i));
-        }
-      };
-      writeString(0, 'RIFF');
-      view.setUint32(4, 36 + numSamples * 2, true);
-      writeString(8, 'WAVE');
-      writeString(12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true); // PCM
-      view.setUint16(22, 1, true); // 1 channel
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeString(36, 'data');
-      view.setUint32(40, numSamples * 2, true);
+    // [Web Worker 기반 무동결 하트비트 루프 유지]
+    // 모바일 OS가 화면 꺼짐 시 메인 스레드 타이머를 동결하더라도 백그라운드 틱을 통해 생명선 유지
 
-      const blob = new Blob([buffer], { type: 'audio/wav' });
-      this.bgKeepAliveAudio = new Audio(URL.createObjectURL(blob));
-      this.bgKeepAliveAudio.loop = true;
-      this.bgKeepAliveAudio.volume = 0.01;
-
-      // timeupdate 이벤트는 OS 사운드 하드웨어 타이머로 구동되어 화면이 꺼져도 0.25초마다 발생함
-      this.bgKeepAliveAudio.addEventListener('timeupdate', () => {
-        if (this.isPlaying && !this.isUserPaused) {
-          this.keepPlaybackAlive();
-        }
-      });
-    } catch (e) {
-      console.warn("Bg keepalive audio init error:", e);
-    }
-
-    // [우회 3단계: Web Audio API 초저음 펄스 앵커]
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        this.webAudioCtx = new AudioCtx();
-        const osc = this.webAudioCtx.createOscillator();
-        const gain = this.webAudioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(20, this.webAudioCtx.currentTime); // 비가청 초저음 20Hz
-        gain.gain.setValueAtTime(0.0001, this.webAudioCtx.currentTime); // 사실상 무음
-        osc.connect(gain);
-        gain.connect(this.webAudioCtx.destination);
-        osc.start();
-      }
-    } catch (e) {}
-
-    // [우회 4단계: 모바일 사용자 최초 터치 제스처 시점 전역 오디오 언락]
-    this.initAudioUnlockListeners();
-
-    // [우회 5단계: 화면 꺼짐/백그라운드 전환 감지 즉시 자동 방어]
+    // 화면 꺼짐/백그라운드 전환 감지 즉시 안전 재개 방어
     if (typeof document !== 'undefined') {
       const handleBackgroundTransition = () => {
         if (this.isPlaying && !this.isUserPaused) {
@@ -304,21 +247,13 @@ export class AudioPlayer {
         }
       });
     }
+
+    this.initAudioUnlockListeners();
   }
 
   // 모바일 브라우저(삼성인터넷/크롬/사파리) 오디오 엔진 영구 언락
   initAudioUnlockListeners() {
     const unlock = () => {
-      if (this.bgKeepAliveAudio) {
-        this.bgKeepAliveAudio.play().then(() => {
-          if (!this.isPlaying || this.isUserPaused) {
-            this.bgKeepAliveAudio.pause();
-          }
-        }).catch(() => {});
-      }
-      if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
-        this.webAudioCtx.resume().catch(() => {});
-      }
       if (this.audio && this.isCurrentLocal()) {
         if (this.isPlaying && !this.isUserPaused) {
           this.audio.play().catch(() => {});
@@ -359,25 +294,10 @@ export class AudioPlayer {
     }
   }
 
-  // 모바일 OS 사운드 포커스 & 백그라운드 무동결 앵커 가동 (삼성인터넷 & 크롬 모바일 백그라운드 재생의 핵심 심장)
+  // 모바일 OS 화면 WakeLock 획득
   ensureSilentAnchorRunning() {
     if (!this.isPlaying || this.isUserPaused) return;
 
-    // 1. 하드웨어 OS 레벨 무음 HTML5 Audio 앵커 가동 (Android AudioTrack 유지 -> 브라우저 탭 동결 절대 방어)
-    if (this.bgKeepAliveAudio) {
-      if (this.bgKeepAliveAudio.paused) {
-        this.bgKeepAliveAudio.play().catch(() => {});
-      }
-    }
-
-    // 2. Web Audio API 엔진 언락 및 가동 (유튜브 오디오 포커스를 방해하지 않고 오디오 서브시스템 활성 유지)
-    try {
-      if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
-        this.webAudioCtx.resume().catch(() => {});
-      }
-    } catch (e) {}
-
-    // 3. 화면 WakeLock 획득
     try {
       if ('wakeLock' in navigator && !this._wakeLock) {
         navigator.wakeLock.request('screen').then(lock => {
@@ -408,15 +328,13 @@ export class AudioPlayer {
     }
   }
 
-  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개 (0ms, 50ms, 150ms, 400ms, 1000ms)
+  // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개
   forceResumePlayback() {
     if (this.isUserPaused || !this.isPlaying) return;
     if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
 
-    // 1. 최상위 OS 오디오 앵커 확실히 재가동
     this.ensureSilentAnchorRunning();
 
-    // 2. YouTube 플레이어가 현재 재생 중(1)이 아니면 즉시 재생 명령 실행
     try {
       const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
       if (state !== 1) {
@@ -425,10 +343,9 @@ export class AudioPlayer {
       }
     } catch (e) {}
 
-    // 3. 백그라운드 전환 지연 대비 다단계 연속 안전 재개
-    [30, 100, 250, 600, 1200].forEach(delay => {
+    [50, 150, 400, 1000].forEach(delay => {
       setTimeout(() => {
-        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
           const s = this.ytPlayer.getPlayerState();
           if (s !== 1 && s !== 3) {
             try {
@@ -443,11 +360,10 @@ export class AudioPlayer {
 
   startBgKeepAlive() {
     this.ensureSilentAnchorRunning();
-
-    if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
-      this.webAudioCtx.resume().catch(() => {});
-    }
     if (this.bgPulseWorker) {
+      try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
+    }
+  }
       try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
     }
   }
