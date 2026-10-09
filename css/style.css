@@ -2155,8 +2155,8 @@ body.is-fullscreen .icon-fs-min {
 }
 
 /* Video 모드 & 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 최적화 엔진)
-   비가시 상태(Song 모드/미니 플레이어)에서는 최상위 z-index(9999) 및 극미량 투명도(opacity: 0.001)로 배치하여
-   브라우저 합성기의 오클루전(Occlusion/가림) 감지를 완벽 우회하면서도 사용자 눈에는 100% 무노출, 터치 무간섭(pointer-events: none) 보장! */
+   비가시 상태(Song 모드/미니 플레이어)에서는 뷰포트 내 상주하면서도 opacity: 1 및 z-index: -999로 배치하여
+   삼성인터넷 '배경에서 재생' 및 크롬의 오클루전(투명도 0.01 미만 차단) 감지를 완벽 우회하고 상시 재생 보장! */
 .yt-player-persistent-wrap {
   position: fixed;
   top: 0;
@@ -2164,16 +2164,16 @@ body.is-fullscreen .icon-fs-min {
   bottom: auto;
   width: 320px;
   height: 240px;
-  z-index: 9999;
-  opacity: 0.001;
+  z-index: -999;
+  opacity: 1;
   pointer-events: none;
   overflow: hidden;
   background: transparent;
   border: none;
   clip-path: none;
   visibility: visible;
-  transition: opacity 0.2s ease, border-radius 0.2s ease;
-  will-change: top, left, width, height, opacity;
+  transition: border-radius 0.2s ease;
+  will-change: top, left, width, height;
 }
 
 .yt-player-persistent-wrap iframe,
@@ -2344,9 +2344,10 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 
 /* 우측 탭 & 컨텐츠 패널 */
 .modal-content-panel {
-  flex: 1;
+  flex: 1.25;
   height: 100%;
-  max-width: 620px;
+  max-width: 680px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2363,7 +2364,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 .modal-right-tabs .modal-tab {
   font-size: 0.92rem;
   font-weight: 700;
-  color: #717171;
+  color: var(--track-tab-inactive, rgba(255, 255, 255, 0.72));
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   padding: 10px 0;
   position: relative;
   letter-spacing: 0.8px;
@@ -2371,11 +2373,17 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   cursor: pointer;
   background: transparent;
   border: none;
-  transition: color 0.15s ease;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.modal-right-tabs .modal-tab:hover {
+  color: #ffffff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
 }
 
 .modal-right-tabs .modal-tab.active {
-  color: #ffffff;
+  color: var(--track-tab-active, #ffffff);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
 }
 
 .modal-right-tabs .modal-tab.active::after {
@@ -2385,7 +2393,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   right: 0;
   bottom: -2px;
   height: 2px;
-  background: #ffffff;
+  background: var(--track-tab-accent, #ffffff);
+  box-shadow: 0 0 8px var(--track-tab-accent, rgba(255, 255, 255, 0.6));
 }
 
 .tab-pane {
@@ -2459,10 +2468,12 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   color: #ffffff;
 }
 
-/* 실시간 동기화 가사 컨테이너 */
+/* 실시간 동기화 가사 컨테이너 (모든 곡에 걸쳐 넉넉하고 일관된 가로 너비 보장) */
 .lyrics-container {
   flex: 1;
-  padding: 24px 16px 180px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24px 20px 180px 20px;
   overflow-y: auto;
   scroll-behavior: smooth;
   display: flex;
@@ -2471,6 +2482,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 }
 
 .lyric-line {
+  width: 100%;
+  box-sizing: border-box;
   font-size: 1.15rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.42);
@@ -3003,8 +3016,10 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     z-index: 10;
   }
 
+  .modal-header #btn-modal-theater-toggle,
+  .modal-header #btn-modal-fullscreen,
   .modal-header #btn-modal-sleep-mode {
-    display: none !important; /* 모바일에서는 잡다한 달 모양 버튼 숨김 처리하여 쾌적한 헤더 구현 */
+    display: none !important; /* 모바일에서는 잡다한 우측 버튼들을 숨겨 토글과 쾌적한 헤더 구현 */
   }
 
   .modal-header-right-actions {
@@ -6387,10 +6402,10 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   display: flex;
   align-items: center;
   justify-content: center !important;
-  gap: 10px;
-  margin: 32px auto 0 auto;
+  gap: 6px !important;
+  margin: 24px auto 0 auto;
   padding: 0 4px;
-  max-width: 520px;
+  max-width: 440px;
   width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -6404,8 +6419,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 .ytm-action-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
+  gap: 5px;
+  padding: 7px 12px;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
@@ -6565,13 +6580,18 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 .comments-sheet-modal {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 25000 !important;
+  z-index: 30000 !important;
   display: flex !important;
   flex-direction: column;
   justify-content: flex-end;
   pointer-events: none;
   visibility: hidden;
   transition: visibility 0.25s ease;
+}
+
+/* 댓글창 열릴 때 동영상 iframe이 댓글창 뒤로 가도록 z-index 하향 */
+body.comments-sheet-open #yt-player-persistent-wrap {
+  z-index: 50 !important;
 }
 
 .comments-sheet-modal.open {
@@ -6920,6 +6940,108 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 
 .modal-like-count {
   display: none !important;
+}
+
+/* ==========================================================================
+   보관함 감상 날짜 시스템 및 날짜 검색 필터 스타일
+   ========================================================================== */
+.library-date-filter-bar {
+  margin-top: 12px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-date-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  padding: 5px 14px;
+  transition: border-color 0.2s, background 0.2s;
+  max-width: 380px;
+  width: 100%;
+}
+
+.library-date-input-wrap:focus-within {
+  border-color: #3ea6ff;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.lib-calendar-svg {
+  color: #8ab4f8;
+  flex-shrink: 0;
+}
+
+.library-date-picker {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.82rem;
+  outline: none;
+  cursor: pointer;
+  width: 22px;
+  padding: 0;
+  opacity: 0.85;
+}
+
+.library-date-picker::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+.library-date-search-input {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.84rem;
+  outline: none;
+  width: 100%;
+}
+
+.library-date-search-input::placeholder {
+  color: #888888;
+}
+
+.btn-clear-date {
+  background: transparent;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+
+.btn-clear-date:hover {
+  color: #fff;
+}
+
+.track-row-played-date {
+  font-size: 0.76rem;
+  color: #8ab4f8;
+  background: rgba(138, 180, 248, 0.12);
+  border: 1px solid rgba(138, 180, 248, 0.22);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  margin-left: 8px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.track-row-played-date i,
+.track-row-played-date svg {
+  width: 11px;
+  height: 11px;
 }
 
 

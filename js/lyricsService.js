@@ -206,7 +206,7 @@ export class LyricsService {
     const trackKey = track.id || track.videoId || track.title;
     if (this.rawLrcCache.has(trackKey)) return;
     try {
-      if (localStorage.getItem(`lyrics_raw_v4_${trackKey}`)) return;
+      if (localStorage.getItem(`lyrics_raw_v5_${trackKey}`)) return;
     } catch (e) {}
 
     setTimeout(() => {
@@ -224,7 +224,7 @@ export class LyricsService {
     if (!rawData) {
       // 로컬 스토리지 원본 캐시 확인
       try {
-        const stored = localStorage.getItem(`lyrics_raw_v4_${trackKey}`);
+        const stored = localStorage.getItem(`lyrics_raw_v5_${trackKey}`);
         if (stored) {
           rawData = JSON.parse(stored);
         }
@@ -278,31 +278,35 @@ export class LyricsService {
         }
 
         const results = await Promise.allSettled(parallelFetches);
+        const allCandidates = [];
+
         for (const res of results) {
           if (res.status === 'fulfilled' && res.value) {
             const val = res.value;
-            // A형 응답: 단일 객체
-            if (val && !Array.isArray(val) && (val.syncedLyrics || val.plainLyrics)) {
-              if (val.syncedLyrics) {
-                data = val;
-                break;
-              } else if (!data) {
-                data = val;
-              }
+            if (Array.isArray(val)) {
+              allCandidates.push(...val);
+            } else if (val && typeof val === 'object' && (val.syncedLyrics || val.plainLyrics)) {
+              allCandidates.push(val);
             }
-            // B형 응답: 배열
-            else if (Array.isArray(val) && val.length > 0) {
-              if (track.duration) {
-                val.sort((a, b) => Math.abs((a.duration || 0) - track.duration) - Math.abs((b.duration || 0) - track.duration));
-              }
-              const bestSynced = val.find(item => item.syncedLyrics);
-              if (bestSynced) {
-                data = bestSynced;
-                break;
-              } else if (!data && val[0]) {
-                data = val[0];
-              }
-            }
+          }
+        }
+
+        if (allCandidates.length > 0) {
+          // K-POP / 한국어 음원 판정 및 한글 가사 우선 선택 엔진
+          const hasHangulMeta = /[가-힣]/.test((track.title || '') + (track.artist || ''));
+          const isKpopArtist = /newjeans|le\s*sserafim|ive|aespa|bts|blackpink|twice|iu|seventeen|stray\s*kids|txt|nct|riize|itzy|nmixx|kiss\s*of\s*life|illit|babymonster|tws|boynextdoor|red\s*velvet|exo|stayc|qwer|plave|g-idle|\(g\)i-dle|taeyeon|baekhyun|jungkook|jimin|v|rm|suga|j-hope|jin|rose|rosé|jennie|jisoo|lisa/i.test((track.artist || '') + ' ' + (track.title || ''));
+          const anyCandidateHasHangul = allCandidates.some(c => /[가-힣]/.test(c.syncedLyrics || c.plainLyrics || ''));
+          const shouldPreferHangul = hasHangulMeta || isKpopArtist || anyCandidateHasHangul;
+
+          allCandidates.sort((a, b) => {
+            const scoreA = this._scoreLyricCandidate(a, track, shouldPreferHangul);
+            const scoreB = this._scoreLyricCandidate(b, track, shouldPreferHangul);
+            return scoreB - scoreA;
+          });
+
+          const bestMatch = allCandidates[0];
+          if (bestMatch && (bestMatch.syncedLyrics || bestMatch.plainLyrics)) {
+            data = bestMatch;
           }
         }
 
@@ -310,7 +314,7 @@ export class LyricsService {
           rawData = data;
           this.rawLrcCache.set(trackKey, data);
           try {
-            localStorage.setItem(`lyrics_raw_v4_${trackKey}`, JSON.stringify(data));
+            localStorage.setItem(`lyrics_raw_v5_${trackKey}`, JSON.stringify(data));
           } catch (e) {}
         }
       } catch (err) {
@@ -353,6 +357,44 @@ export class LyricsService {
     }
 
     return [];
+  }
+
+  _scoreLyricCandidate(item, track, shouldPreferHangul) {
+    if (!item) return -999;
+    const lyricsText = (item.syncedLyrics || item.plainLyrics || '');
+    if (!lyricsText) return -999;
+
+    let score = 0;
+
+    // 1. 싱크 가사 가산점
+    if (item.syncedLyrics) score += 60;
+
+    // 2. 제목/앨범에 'romanized' 명시된 경우 감점
+    const trackName = (item.trackName || '').toLowerCase();
+    const albumName = (item.albumName || '').toLowerCase();
+    if (trackName.includes('romanized') || albumName.includes('romanized') || trackName.includes('rom')) {
+      score -= 150;
+    }
+
+    // 3. 한국어 / 한글 가사 vs 로마자 발음 가사 정밀 판별
+    const hasHangul = /[가-힣]/.test(lyricsText);
+    if (shouldPreferHangul) {
+      if (hasHangul) {
+        score += 150; // 정품 한글 가사 압도적 최우선
+      } else {
+        score -= 90; // K-POP 음원인데 한글이 없는 로마자/영어 발음본 감점
+      }
+    }
+
+    // 4. 곡 재생시간(duration) 오차 보정
+    if (track.duration && item.duration) {
+      const diff = Math.abs(item.duration - track.duration);
+      if (diff <= 2) score += 30;
+      else if (diff <= 5) score += 15;
+      else if (diff > 30) score -= 40;
+    }
+
+    return score;
   }
 
   // LRC 형식 ([01:23.45] 가사 내용)을 밀리초 정확도의 객체 배열로 파싱 및 오프셋 적용

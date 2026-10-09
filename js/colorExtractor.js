@@ -104,12 +104,26 @@ export class ColorExtractor {
     callback({ r: 55, g: 30, b: 35 });
   }
 
-  // 추출된 색상을 CSS 커스텀 속성으로 즉시 주입
+  // 추출된 색상을 CSS 커스텀 속성으로 즉시 주입 (배경 대비 가독성 보장)
   applyToDOM(rgb) {
     if (!rgb) return;
     const root = document.documentElement;
     root.style.setProperty('--track-r', rgb.r);
     root.style.setProperty('--track-g', rgb.g);
     root.style.setProperty('--track-b', rgb.b);
+
+    // 배경 명도(Luminance) 분석 기반 대비 보정
+    const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+    const tabInactive = brightness > 140 ? 'rgba(255, 255, 255, 0.78)' : 'rgba(255, 255, 255, 0.70)';
+    const tabActive = '#ffffff';
+
+    // 앨범 무드를 살린 부드러운 틴트 악센트 컬러
+    const accentR = Math.min(255, Math.round(rgb.r * 0.45 + 140));
+    const accentG = Math.min(255, Math.round(rgb.g * 0.45 + 140));
+    const accentB = Math.min(255, Math.round(rgb.b * 0.45 + 140));
+
+    root.style.setProperty('--track-tab-inactive', tabInactive);
+    root.style.setProperty('--track-tab-active', tabActive);
+    root.style.setProperty('--track-tab-accent', `rgb(${accentR}, ${accentG}, ${accentB})`);
   }
 }

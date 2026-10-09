@@ -81,14 +81,24 @@ export class AudioPlayer {
                   this.syncMediaSessionPlaybackState();
                   if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
                 } else {
-                  // [삼성인터넷 모바일 핵심 방어 가드]
-                  // 사용자가 정지하지 않았는데 일시정지(State 2) 발생 = 모바일 화면 꺼짐, 홈 이동, 브라우저 비디오 스로틀링!
-                  // isPlaying 상태를 절대 해제하지 않고, 백그라운드 재생 엔진을 즉각 가동하여 무중단 재개!
-                  this.isPlaying = true;
+                  // [삼성인터넷 & 모바일 브라우저 백그라운드 전환 시 일시정지 무중단 방어]
                   this.ensureSilentAnchorRunning();
                   this.startBgKeepAlive();
-                  this.syncMediaSessionPlaybackState();
                   this.forceResumePlayback();
+
+                  // 화면 꺼짐 직후 브라우저 비디오 스로틀링으로 일시정지 상태가 유지된 경우,
+                  // 잠금화면 및 알림창에 [ ▶ 재생 ] 버튼이 정확히 노출되도록 동기화 (원터치 즉각 재개 보장)
+                  setTimeout(() => {
+                    if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
+                      const curState = this.ytPlayer.getPlayerState();
+                      if (curState === 2 && !this.isUserPaused) {
+                        if ('mediaSession' in navigator) {
+                          navigator.mediaSession.playbackState = 'paused';
+                        }
+                        if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
+                      }
+                    }
+                  }, 350);
                 }
               } else if (event.data === 0) {
                 // 재생 완료 시
@@ -189,7 +199,65 @@ export class AudioPlayer {
     this.bgKeepAliveAudio = null;
     this.webAudioCtx = null;
 
-    // [우회 1단계: Web Worker 기반 무동결 하트비트 루프]
+    // A. 16-bit 44.1kHz 무음 WAV 오디오 캐리어 생성 (네트워크 의존성 0%, 100% 로컬 무한 루프)
+    // 모바일 OS(안드로이드/iOS)가 오디오 하드웨어 세션을 닫지 않도록 Audio Focus 상시 유지
+    try {
+      const createSilentWav = () => {
+        const sampleRate = 44100;
+        const numSamples = sampleRate; // 1초
+        const buffer = new ArrayBuffer(44 + numSamples * 2);
+        const view = new DataView(buffer);
+        view.setUint32(0, 0x52494646, false); // "RIFF"
+        view.setUint32(4, 36 + numSamples * 2, true);
+        view.setUint32(8, 0x57415645, false); // "WAVE"
+        view.setUint32(12, 0x666d7420, false); // "fmt "
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, 1, true); // Mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        view.setUint32(36, 0x64617461, false); // "data"
+        view.setUint32(40, numSamples * 2, true);
+        return new Blob([buffer], { type: 'audio/wav' });
+      };
+
+      const silentBlob = createSilentWav();
+      const silentUrl = URL.createObjectURL(silentBlob);
+
+      let el = document.getElementById('streamvance-bg-audio-anchor');
+      if (!el) {
+        el = new Audio();
+        el.id = 'streamvance-bg-audio-anchor';
+        document.body.appendChild(el);
+      }
+      el.src = silentUrl;
+      el.loop = true;
+      el.volume = 0.001; // 초미세 볼륨으로 OS 오디오 하드웨어 믹서 상시 홀드
+      el.playsInline = true;
+      this.bgKeepAliveAudio = el;
+    } catch (e) {
+      console.warn("Silent audio carrier init error:", e);
+    }
+
+    // B. Web Audio API 기반 하드웨어 오디오 클록 락 (안드로이드 ALSA 파이프라인 동결 방어)
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.webAudioCtx = new AudioCtx();
+        const osc = this.webAudioCtx.createOscillator();
+        const gain = this.webAudioCtx.createGain();
+        gain.gain.value = 0.00001;
+        osc.connect(gain);
+        gain.connect(this.webAudioCtx.destination);
+        osc.start();
+      }
+    } catch (e) {
+      console.warn("Web Audio keepalive init error:", e);
+    }
+
+    // C. Web Worker 기반 무동결 하트비트 루프
     // 모바일 OS가 화면 꺼짐 시 메인 스레드 타이머(setTimeout/setInterval)를 동결하더라도,
     // Web Worker는 백그라운드 독립 스레드에서 지속적으로 틱(TICK)을 전송하여 메인 스레드를 깨움
     try {
@@ -225,21 +293,18 @@ export class AudioPlayer {
       console.warn("Web Worker keepalive setup fallback:", e);
     }
 
-    // [Web Worker 기반 무동결 하트비트 루프 유지]
-    // 모바일 OS가 화면 꺼짐 시 메인 스레드 타이머를 동결하더라도 백그라운드 틱을 통해 생명선 유지
-
-    // 화면 꺼짐/백그라운드 전환 감지 즉시 안전 재개 방어
+    // D. 화면 꺼짐/백그라운드 전환 감지 즉시 안전 재개 방어
     if (typeof document !== 'undefined') {
       const handleBackgroundTransition = () => {
         if (this.isPlaying && !this.isUserPaused) {
           this.startBgKeepAlive();
-          this.syncMediaSessionPlaybackState();
           this.forceResumePlayback();
         }
       };
 
       document.addEventListener('visibilitychange', handleBackgroundTransition, true);
       window.addEventListener('pagehide', handleBackgroundTransition, true);
+      window.addEventListener('blur', handleBackgroundTransition, true);
       window.addEventListener('focus', () => {
         if (this.isPlaying && !this.isUserPaused) {
           this.syncMediaSessionPlaybackState();
@@ -254,6 +319,12 @@ export class AudioPlayer {
   // 모바일 브라우저(삼성인터넷/크롬/사파리) 오디오 엔진 영구 언락
   initAudioUnlockListeners() {
     const unlock = () => {
+      if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+        this.webAudioCtx.resume().catch(() => {});
+      }
+      if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused && this.isPlaying && !this.isUserPaused) {
+        this.bgKeepAliveAudio.play().catch(() => {});
+      }
       if (this.audio && this.isCurrentLocal()) {
         if (this.isPlaying && !this.isUserPaused) {
           this.audio.play().catch(() => {});
@@ -315,6 +386,9 @@ export class AudioPlayer {
     if (!this.isPlaying || this.isUserPaused) return;
 
     this.ensureSilentAnchorRunning();
+    if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused) {
+      this.bgKeepAliveAudio.play().catch(() => {});
+    }
 
     if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
       try {
@@ -334,6 +408,9 @@ export class AudioPlayer {
     if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
 
     this.ensureSilentAnchorRunning();
+    if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused) {
+      this.bgKeepAliveAudio.play().catch(() => {});
+    }
 
     try {
       const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
@@ -343,7 +420,7 @@ export class AudioPlayer {
       }
     } catch (e) {}
 
-    [50, 150, 400, 1000].forEach(delay => {
+    [100, 300, 700].forEach(delay => {
       setTimeout(() => {
         if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
           const s = this.ytPlayer.getPlayerState();
@@ -360,6 +437,12 @@ export class AudioPlayer {
 
   startBgKeepAlive() {
     this.ensureSilentAnchorRunning();
+    if (this.webAudioCtx && this.webAudioCtx.state === 'suspended') {
+      this.webAudioCtx.resume().catch(() => {});
+    }
+    if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused && this.isPlaying && !this.isUserPaused) {
+      this.bgKeepAliveAudio.play().catch(() => {});
+    }
     if (this.bgPulseWorker) {
       try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
     }

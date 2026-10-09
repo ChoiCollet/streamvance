@@ -197,16 +197,24 @@ export class UIManager {
     this.lastSearchData = null;
     this.currentSearchFilter = 'all';
 
-    // 시청 / 감상 기록 영구 저장 및 관리
+    // 시청 / 감상 기록 영구 저장 및 관리 (각 곡의 재생 일시 playedAt 시스템 포함)
     this.playHistory = [];
     try {
       const storedHist = JSON.parse(localStorage.getItem('streamvance_play_history') || '[]');
       if (Array.isArray(storedHist) && storedHist.length > 0) {
-        this.playHistory = storedHist;
+        const now = Date.now();
+        this.playHistory = storedHist.map((item, idx) => {
+          if (!item.playedAt) {
+            item.playedAt = now - idx * 3600000;
+          }
+          return item;
+        });
       }
     } catch (e) {}
 
     this.localFiles = [];
+    this.commentsCache = new Map();
+    this.libraryDateFilter = '';
 
     // DOM Elements Cache
     this.dom = {
@@ -637,6 +645,17 @@ export class UIManager {
       this.dom.btnClearHistory.style.display = (tabType === 'history' && targetTracks.length > 0) ? 'inline-flex' : 'none';
     }
 
+    // 날짜 검색 & 필터 바는 '최근 재생한 곡(history)' 탭에서 활성화
+    const dateFilterBar = document.getElementById('library-date-filter-bar');
+    if (dateFilterBar) {
+      dateFilterBar.style.display = (tabType === 'history') ? 'flex' : 'none';
+    }
+
+    // 날짜 필터 적용 (사용자가 날짜를 입력하거나 피커로 선택했을 때)
+    if (tabType === 'history' && this.libraryDateFilter) {
+      targetTracks = targetTracks.filter(t => this.matchesDateFilter(t.playedAt, this.libraryDateFilter));
+    }
+
     if (targetTracks.length === 0) {
       let emptyMsg = '아직 보관된 음악이 없습니다.';
       let emptySub = '좋아하는 곡에 좋아요를 누르거나 음악 파일을 추가해보세요.';
@@ -646,8 +665,13 @@ export class UIManager {
         emptySub = '음악을 들으며 엄지척(좋아요)을 눌러 나만의 보관함을 만들어보세요.';
         icon = 'thumbs-up';
       } else if (tabType === 'history') {
-        emptyMsg = '시청 / 감상 기록이 없습니다.';
-        emptySub = '음악을 재생하면 여기에 자동으로 기록되어 언제든 다시 들을 수 있습니다.';
+        if (this.libraryDateFilter) {
+          emptyMsg = `'${this.libraryDateFilter}' 날짜에 감상한 기록이 없습니다.`;
+          emptySub = '다른 날짜를 검색하시거나 [초기화] 버튼을 눌러보세요.';
+        } else {
+          emptyMsg = '시청 / 감상 기록이 없습니다.';
+          emptySub = '음악을 재생하면 여기에 자동으로 기록되어 언제든 다시 들을 수 있습니다.';
+        }
         icon = 'history';
       } else if (tabType === 'local') {
         emptyMsg = '추가된 로컬 음악이 없습니다.';
@@ -684,6 +708,8 @@ export class UIManager {
           const isCurrent = this.player.getCurrentTrack()?.id === track.id;
           const isLiked = this.likedTrackIds.has(track.id);
           const isOfflineItem = tabType === 'offline' || track.isOffline;
+          const playedDateStr = (tabType === 'history' || track.playedAt) ? this.formatPlayedDate(track.playedAt) : '';
+
           return `
             <div class="track-row-card ${isCurrent ? 'playing' : ''}" data-track-id="${track.id}">
               <div class="track-row-cover">
@@ -703,6 +729,12 @@ export class UIManager {
                 <div class="track-row-artist">${track.artist} • ${track.album || ''}</div>
               </div>
               <span class="track-row-duration">${this.formatTime(track.duration)}</span>
+              ${playedDateStr ? `
+                <span class="track-row-played-date" title="감상 날짜: ${playedDateStr}">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                  ${playedDateStr}
+                </span>
+              ` : ''}
               <div class="track-row-actions">
                 ${tabType === 'history' ? `
                   <button class="btn-track-action btn-delete-history" data-action="delete-history" data-track-id="${track.id}" title="기록에서 삭제">
@@ -727,6 +759,74 @@ export class UIManager {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  // 감상 일시 포맷 (예: 10월 10일, 오늘, 어제)
+  formatPlayedDate(timestamp) {
+    if (!timestamp) return '';
+    try {
+      const d = new Date(timestamp);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      const yest = new Date(now);
+      yest.setDate(now.getDate() - 1);
+      const isYesterday = d.getFullYear() === yest.getFullYear() && d.getMonth() === yest.getMonth() && d.getDate() === yest.getDate();
+
+      const m = d.getMonth() + 1;
+      const day = d.getDate();
+      if (isToday) return `오늘 (${m}월 ${day}일)`;
+      if (isYesterday) return `어제 (${m}월 ${day}일)`;
+      return `${m}월 ${day}일`;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 날짜 검색 필터 일치 여부 판별 (2026-10-10, 10-10, 10월 10일, 1010 등 다양한 검색 포맷 지원)
+  matchesDateFilter(timestamp, filterStr) {
+    if (!filterStr || !filterStr.trim()) return true;
+    if (!timestamp) return false;
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return false;
+
+    const raw = filterStr.trim().toLowerCase();
+    const cleanNumbers = raw.replace(/[^0-9]/g, '');
+
+    const y = String(d.getFullYear());
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const mNum = String(d.getMonth() + 1);
+    const dayNum = String(d.getDate());
+
+    const dateFormats = [
+      `${y}-${m}-${day}`,
+      `${y}.${m}.${day}`,
+      `${mNum}월 ${dayNum}일`,
+      `${mNum}월${dayNum}일`,
+      `${m}-${day}`,
+      `${m}.${day}`,
+      `${y}${m}${day}`,
+      `${m}${day}`
+    ];
+
+    if (raw === '오늘') {
+      const now = new Date();
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    }
+    if (raw === '어제') {
+      const now = new Date();
+      now.setDate(now.getDate() - 1);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    }
+
+    if (cleanNumbers.length >= 2) {
+      const full = `${y}${m}${day}`;
+      const md = `${m}${day}`;
+      if (full.includes(cleanNumbers) || md.includes(cleanNumbers)) return true;
+    }
+
+    return dateFormats.some(fmt => fmt.toLowerCase().includes(raw) || raw.includes(fmt.toLowerCase()));
   }
 
   // 오프라인 저장 뱃지 개수 업데이트
@@ -1108,8 +1208,8 @@ export class UIManager {
     `;
   }
 
-  // 9. 관련 음악(Related) 렌더링 (아티스트 및 장르/분위기 정밀 매칭)
-  renderRelated(currentTrack, allTracks) {
+  // 9. 관련 음악(Related) 렌더링 (아티스트/장르 매칭 + YouTube /api/related 추천)
+  async renderRelated(currentTrack, allTracks) {
     if (!this.dom.relatedList) return;
     if (!currentTrack) {
       this.dom.relatedList.innerHTML = `<p class="lyrics-placeholder">재생 중인 곡이 없습니다.</p>`;
@@ -1119,9 +1219,10 @@ export class UIManager {
     const curArtist = (currentTrack.artist || '').toLowerCase();
     const curGenre = currentTrack.genre || '';
     const curMood = currentTrack.mood || '';
+    const vid = currentTrack.videoId || (currentTrack.id || '').replace(/^yt-/, '');
 
-    // 1) 같은 아티스트 곡 우선 추출
-    const sameArtistTracks = allTracks.filter(t => 
+    // 1) 같은 아티스트 곡 추출
+    const sameArtistTracks = (allTracks || []).filter(t => 
       t.id !== currentTrack.id && 
       t.videoId !== currentTrack.videoId &&
       (curArtist.length > 1 && (
@@ -1131,19 +1232,11 @@ export class UIManager {
     );
 
     // 2) 비슷한 장르 또는 분위기 곡 추출
-    const similarMoodTracks = allTracks.filter(t =>
+    const similarMoodTracks = (allTracks || []).filter(t =>
       t.id !== currentTrack.id &&
       t.videoId !== currentTrack.videoId &&
       !sameArtistTracks.some(sa => sa.id === t.id) &&
       (t.genre === curGenre || t.mood === curMood)
-    );
-
-    // 3) 보충 추천 곡
-    const fallbackTracks = allTracks.filter(t =>
-      t.id !== currentTrack.id &&
-      t.videoId !== currentTrack.videoId &&
-      !sameArtistTracks.some(sa => sa.id === t.id) &&
-      !similarMoodTracks.some(sm => sm.id === t.id)
     );
 
     let html = '';
@@ -1151,7 +1244,7 @@ export class UIManager {
     if (sameArtistTracks.length > 0) {
       html += `
         <div class="related-group" style="margin-bottom: 24px;">
-          <h3 class="related-subhead">${currentTrack.artist}의 다른 곡</h3>
+          <h3 class="related-subhead">${currentTrack.artist}의 다른 인기곡</h3>
           <div class="related-tracks-sublist">
             ${sameArtistTracks.slice(0, 4).map(track => this._createSearchTrackRow(track)).join('')}
           </div>
@@ -1159,13 +1252,12 @@ export class UIManager {
       `;
     }
 
-    const combinedSimilar = [...similarMoodTracks, ...fallbackTracks].slice(0, 6);
-    if (combinedSimilar.length > 0) {
+    if (similarMoodTracks.length > 0) {
       html += `
-        <div class="related-group">
+        <div class="related-group" style="margin-bottom: 24px;">
           <h3 class="related-subhead">비슷한 분위기의 맞춤 추천</h3>
           <div class="related-tracks-sublist">
-            ${combinedSimilar.map(track => this._createSearchTrackRow(track)).join('')}
+            ${similarMoodTracks.slice(0, 5).map(track => this._createSearchTrackRow(track)).join('')}
           </div>
         </div>
       `;
@@ -1173,9 +1265,34 @@ export class UIManager {
 
     this.dom.relatedList.innerHTML = html || `<p class="lyrics-placeholder">관련 추천 음악을 찾는 중입니다...</p>`;
     if (window.lucide) window.lucide.createIcons();
+
+    // 3) YouTube 실시간 /api/related 추천 비동기 결합
+    if (vid) {
+      try {
+        const qUrl = `/api/related?id=${encodeURIComponent(vid)}&artist=${encodeURIComponent(currentTrack.artist || '')}&title=${encodeURIComponent(currentTrack.title || '')}`;
+        const res = await fetch(qUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+            const apiTracks = data.tracks.filter(t => t.videoId !== vid && t.id !== currentTrack.id);
+            if (apiTracks.length > 0) {
+              const apiGroupHtml = `
+                <div class="related-group">
+                  <h3 class="related-subhead">이 곡을 좋아한 사용자가 함께 들은 곡</h3>
+                  <div class="related-tracks-sublist">
+                    ${apiTracks.slice(0, 8).map(track => this._createSearchTrackRow(track)).join('')}
+                  </div>
+                </div>
+              `;
+              this.dom.relatedList.innerHTML = (html ? html + apiGroupHtml : apiGroupHtml);
+              if (window.lucide) window.lucide.createIcons();
+            }
+          }
+        }
+      } catch (e) {}
+    }
   }
 
-  // 10. 검색 결과 렌더링 (아티스트 상위 검색결과 카드 + 노래 + 동영상 분리 - 스크린샷 2 일치)
   // 10. 검색 결과 렌더링 (Screenshot 3 100% 일치: 상단 필터 칩 + 와이드/스퀘어 카드 + 더보기 버튼)
   renderSearchResults(query, searchData, isSearchingOnline = false) {
     if (!this.dom.searchResultsList) return;
@@ -1505,10 +1622,11 @@ export class UIManager {
       cover: track.cover,
       genre: track.genre || 'pop',
       mood: track.mood || 'energy',
-      audioUrl: track.audioUrl || null
+      audioUrl: track.audioUrl || null,
+      playedAt: Date.now() // 감상 날짜 및 시각 타임스탬프 영구 저장
     };
     this.playHistory.unshift(cleanHistoryTrack);
-    if (this.playHistory.length > 50) this.playHistory.pop();
+    if (this.playHistory.length > 100) this.playHistory.pop();
     try {
       localStorage.setItem('streamvance_play_history', JSON.stringify(this.playHistory));
     } catch (e) {}
@@ -1650,11 +1768,12 @@ export class UIManager {
     }
   }
 
-  // 유튜브 실시간 댓글 바텀시트 열기
+  // 유튜브 실시간 댓글 바텀시트 열기 (초고속 캐싱 & 즉각 모달 반응)
   async openCommentsSheet(videoId, sort = 'top') {
     const modal = document.getElementById('comments-sheet-modal');
     if (!modal) return;
     modal.classList.add('open');
+    document.body.classList.add('comments-sheet-open');
 
     // 커스텀 ID(track-xxx) 방어: allTracks에서 실제 유튜브 videoId 조회
     if (videoId && (videoId.startsWith('track-') || !videoId.match(/^[a-zA-Z0-9_-]{11}$/))) {
@@ -1676,8 +1795,6 @@ export class UIManager {
 
     const loading = document.getElementById('comments-loading');
     const list = document.getElementById('comments-items-list');
-    if (loading) loading.style.display = 'flex';
-    if (list) list.innerHTML = '';
 
     if (!videoId) {
       if (loading) loading.style.display = 'none';
@@ -1685,11 +1802,47 @@ export class UIManager {
       return;
     }
 
+    // 캐시 확인: 메모리에 이미 존재하면 0ms 즉각 렌더링
+    const cacheKey = `${videoId}_${sort}`;
+    if (this.commentsCache.has(cacheKey)) {
+      const cached = this.commentsCache.get(cacheKey);
+      if (loading) loading.style.display = 'none';
+      if (cached.disabled) {
+        if (list) {
+          list.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 50px 20px;">
+              <p style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px;">댓글 사용 중지됨</p>
+              <p style="font-size: 13px; color: var(--text-muted);">${cached.disabledMessage || '이 동영상은 댓글이 사용 중지되어 있습니다.'}</p>
+            </div>
+          `;
+        }
+      } else {
+        this.renderCommentsList(cached.comments || []);
+      }
+      if (cached.commentCount) {
+        const sheetCount = document.getElementById('comments-sheet-total-count');
+        const pillCount = document.getElementById('pill-comment-count');
+        const barCommentCount = document.getElementById('player-bar-comment-count');
+        if (sheetCount) sheetCount.textContent = cached.commentCount;
+        if (pillCount) pillCount.textContent = cached.commentCount;
+        if (barCommentCount) {
+          barCommentCount.textContent = cached.commentCount;
+          barCommentCount.style.display = 'inline-block';
+        }
+      }
+      return;
+    }
+
+    if (loading) loading.style.display = 'flex';
+    if (list) list.innerHTML = '';
+
     try {
       const res = await fetch(`/api/comments?id=${encodeURIComponent(videoId)}&sort=${sort}`);
       if (loading) loading.style.display = 'none';
       if (res.ok) {
         const data = await res.json();
+        this.commentsCache.set(cacheKey, data);
+
         if (data.disabled) {
           if (list) {
             list.innerHTML = `

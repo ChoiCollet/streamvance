@@ -140,6 +140,19 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(comments_data)
             return
 
+        # 유튜브 유사 음악 / 자동재생 추천 API 엔드포인트: /api/related?id=...&videoId=...&artist=...&title=...
+        if parsed.path == '/api/related':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('id', [''])[0].strip() or query_params.get('videoId', [''])[0].strip()
+            artist = query_params.get('artist', [''])[0].strip()
+            title = query_params.get('title', [''])[0].strip()
+            if not vid:
+                self.send_json({'videoId': '', 'tracks': []})
+                return
+            related_data = self.fetch_youtube_related(vid, artist, title)
+            self.send_json(related_data)
+            return
+
         # 모바일 백그라운드 재생 방어용 무음 오디오 엔드포인트: /api/silent-stream
         if parsed.path == '/api/silent-stream':
             sample_rate = 44100
@@ -316,6 +329,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
 
     DETAILS_CACHE = {}
     COMMENTS_CACHE = {}
+    RELATED_CACHE = {}
     INVIDIOUS_MIRRORS = [
         'https://inv.nadeko.net',
         'https://invidious.nerdvpn.de',
@@ -683,6 +697,103 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             score -= 30
 
         return score
+
+    def fetch_youtube_related(self, video_id, artist="", title=""):
+        cache_key = f"{video_id}_{artist}_{title}"
+        if cache_key in self.RELATED_CACHE:
+            return self.RELATED_CACHE[cache_key]
+
+        tracks = []
+        seen_ids = {video_id}
+
+        # 1. InnerTube /next API 호출하여 유튜브 공식 추천 lockupViewModel / compactVideoRenderer 파싱
+        try:
+            payload = json.dumps({
+                'context': {
+                    'client': {'clientName': 'WEB', 'clientVersion': '2.20241001.01.00', 'hl': 'ko', 'gl': 'KR'}
+                },
+                'videoId': video_id
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                'https://www.youtube.com/youtubei/v1/next',
+                data=payload,
+                headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', 'Accept-Language': 'ko-KR,ko;q=0.9'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as r:
+                d = json.loads(r.read().decode('utf-8', errors='ignore'))
+
+            sec_results = d.get('contents', {}).get('twoColumnWatchNextResults', {}).get('secondaryResults', {}).get('secondaryResults', {}).get('results', [])
+            bad_keywords = ['1시간', '1hour', '모음', 'playlist', '플레이리스트', '연속듣기', '반복재생', 'top 100', 'top 50', '차트둥이']
+
+            for it in sec_results:
+                vid = None
+                t_title = None
+                t_artist = None
+                t_dur = 0
+
+                # A. modern lockupViewModel
+                vm = it.get('lockupViewModel')
+                if vm and vm.get('contentId') and not str(vm['contentId']).startswith(('PL', 'RD', 'OLAK')):
+                    vid = vm['contentId']
+                    meta = vm.get('metadata', {}).get('lockupMetadataViewModel', {})
+                    t_title = meta.get('title', {}).get('content', '')
+                    rows = meta.get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
+                    if rows and 'parts' in rows[0] and rows[0]['parts']:
+                        t_artist = rows[0]['parts'][0].get('text', {}).get('content', '')
+
+                # B. classic compactVideoRenderer
+                cvr = it.get('compactVideoRenderer')
+                if cvr and cvr.get('videoId') and not str(cvr['videoId']).startswith(('PL', 'RD', 'OLAK')):
+                    vid = cvr['videoId']
+                    t_title = cvr.get('title', {}).get('simpleText') or cvr.get('title', {}).get('runs', [{}])[0].get('text', '')
+                    t_artist = cvr.get('shortBylineText', {}).get('runs', [{}])[0].get('text', '')
+                    dur_str = cvr.get('lengthText', {}).get('simpleText', '')
+                    if dur_str:
+                        parts = dur_str.split(':')
+                        try:
+                            if len(parts) == 2:
+                                t_dur = int(parts[0]) * 60 + int(parts[1])
+                            elif len(parts) == 3:
+                                t_dur = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                        except Exception:
+                            t_dur = 200
+
+                if vid and vid not in seen_ids and t_title:
+                    low_title = t_title.lower()
+                    if not any(bk in low_title for bk in bad_keywords):
+                        seen_ids.add(vid)
+                        tracks.append({
+                            'id': f"yt-{vid}",
+                            'videoId': vid,
+                            'title': t_title,
+                            'artist': t_artist or artist or 'YouTube Music',
+                            'cover': f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                            'duration': t_dur or 210,
+                            'genre': 'kpop' if any('\uac00' <= ch <= '\ud7a3' for ch in (t_title + (t_artist or ''))) else 'pop',
+                            'mood': 'energy'
+                        })
+        except Exception as e:
+            print(f"fetch_youtube_related error for {video_id}: {e}", file=sys.stderr)
+
+        # 2. 결과가 5곡 미만이면 아티스트/곡 기반 검색으로 보충
+        if len(tracks) < 6:
+            search_query = f"{artist} 노래" if artist and len(artist) >= 2 else (f"{title} 노래" if title else "")
+            if search_query:
+                try:
+                    s_res = self.search_youtube(search_query)
+                    for st in s_res.get('songs', []) + s_res.get('tracks', []):
+                        svid = st.get('videoId') or st.get('id', '').replace('yt-', '')
+                        if svid and svid not in seen_ids:
+                            seen_ids.add(svid)
+                            tracks.append(st)
+                            if len(tracks) >= 12:
+                                break
+                except Exception:
+                    pass
+
+        res = {'videoId': video_id, 'tracks': tracks[:12]}
+        self.RELATED_CACHE[cache_key] = res
+        return res
 
     def search_youtube_innertube(self, query):
         try:

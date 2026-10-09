@@ -40,16 +40,6 @@
         Object.defineProperty(document, 'webkitHidden', { get: () => false, configurable: true });
         Object.defineProperty(document, 'webkitVisibilityState', { get: () => 'visible', configurable: true });
       } catch (e) {}
-
-      const stopVis = function(e) {
-        if (e.type === 'visibilitychange' || e.type === 'webkitvisibilitychange') {
-          e.stopImmediatePropagation();
-        }
-      };
-      window.addEventListener('visibilitychange', stopVis, true);
-      document.addEventListener('visibilitychange', stopVis, true);
-      window.addEventListener('webkitvisibilitychange', stopVis, true);
-      document.addEventListener('webkitvisibilitychange', stopVis, true);
     })();
   </script>
 
@@ -543,6 +533,25 @@
               <button class="lib-tab" data-lib="offline">오프라인 저장 (<span id="offline-count">0</span>)</button>
               <button class="lib-tab" data-lib="local">내 로컬 파일</button>
             </div>
+            <!-- 최근 재생한 곡 날짜별 검색 & 필터 바 -->
+            <div class="library-date-filter-bar" id="library-date-filter-bar" style="display: none;">
+              <div class="library-date-input-wrap">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lib-calendar-svg">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <input type="date" id="library-date-picker" class="library-date-picker" title="날짜로 기록 찾기">
+                <input type="text" id="library-date-search-input" class="library-date-search-input" placeholder="날짜로 감상 기록 찾기 (예: 10월 10일, 2026-10-10)">
+                <button type="button" class="btn-clear-date" id="btn-clear-date-filter" title="날짜 필터 초기화" style="display: none;">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
           <div class="library-content-container" id="library-content"></div>
         </section>
@@ -949,57 +958,6 @@
       </div>
     </div>
 
-    <!-- YouTube 실시간 댓글 바텀시트 서랍 (최상위 독립 모달로 배치) -->
-    <div class="comments-sheet-modal" id="comments-sheet-modal">
-      <div class="comments-sheet-backdrop" id="comments-sheet-backdrop"></div>
-      <div class="comments-sheet-content">
-        <div class="comments-sheet-drag-handle"></div>
-        <div class="comments-sheet-header">
-          <div class="comments-header-title-wrap">
-            <h3 class="comments-sheet-title">댓글</h3>
-            <span class="comments-sheet-total-count" id="comments-sheet-total-count">0</span>
-          </div>
-          <button class="btn-close-comments" id="btn-close-comments" title="댓글 닫기">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="comments-filter-tabs">
-          <button class="comments-filter-pill active" data-sort="top" id="btn-comments-sort-top">인기순</button>
-          <button class="comments-filter-pill" data-sort="new" id="btn-comments-sort-new">최신순</button>
-        </div>
-        <div class="comments-community-notice">
-          <span>댓글을 사용할 때는 타인을 존중하고 <strong>커뮤니티 가이드</strong>를 준수해야 합니다.</span>
-        </div>
-        <div class="comments-body-scroll" id="comments-body-scroll">
-          <div class="comments-loading-indicator" id="comments-loading" style="display: none;">
-            <div class="comments-spinner-ring"></div>
-            <div class="comments-skeleton-list">
-              <div class="comment-skeleton-card">
-                <div class="skeleton-avatar"></div>
-                <div class="skeleton-body">
-                  <div class="skeleton-line title"></div>
-                  <div class="skeleton-line text"></div>
-                  <div class="skeleton-line text short"></div>
-                </div>
-              </div>
-              <div class="comment-skeleton-card">
-                <div class="skeleton-avatar"></div>
-                <div class="skeleton-body">
-                  <div class="skeleton-line title"></div>
-                  <div class="skeleton-line text"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="comments-items-list" id="comments-items-list">
-            <!-- 실시간 댓글 항목 동적 렌더링 -->
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- OLED 화면 끄기 / 슬립 절전 모드 오버레이 (화면을 끈 채로 음악 지속 재생) -->
     <div class="oled-sleep-overlay" id="oled-sleep-overlay" style="display: none;">
@@ -1449,8 +1407,73 @@
     <div class="toast-notification" id="toast-notification"></div>
   </div>
 
+  <!-- YouTube 실시간 댓글 바텀시트 서랍 (최상위 독립 모달: 영상 iframe 및 모든 레이어 위에 노출) -->
+  <div class="comments-sheet-modal" id="comments-sheet-modal">
+    <div class="comments-sheet-backdrop" id="comments-sheet-backdrop"></div>
+    <div class="comments-sheet-content">
+      <div class="comments-sheet-drag-handle"></div>
+      <div class="comments-sheet-header">
+        <div class="comments-header-title-wrap">
+          <h3 class="comments-sheet-title">댓글</h3>
+          <span class="comments-sheet-total-count" id="comments-sheet-total-count">0</span>
+        </div>
+        <button class="btn-close-comments" id="btn-close-comments" title="댓글 닫기">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="comments-filter-tabs">
+        <button class="comments-filter-pill active" data-sort="top" id="btn-comments-sort-top">인기순</button>
+        <button class="comments-filter-pill" data-sort="new" id="btn-comments-sort-new">최신순</button>
+      </div>
+      <div class="comments-community-notice">
+        <span>댓글을 사용할 때는 타인을 존중하고 <strong>커뮤니티 가이드</strong>를 준수해야 합니다.</span>
+      </div>
+      <div class="comments-body-scroll" id="comments-body-scroll">
+        <div class="comments-loading-indicator" id="comments-loading" style="display: none;">
+          <div class="comments-spinner-ring"></div>
+          <div class="comments-skeleton-list">
+            <div class="comment-skeleton-card">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-body">
+                <div class="skeleton-line title"></div>
+                <div class="skeleton-line text"></div>
+                <div class="skeleton-line text short"></div>
+              </div>
+            </div>
+            <div class="comment-skeleton-card">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-body">
+                <div class="skeleton-line title"></div>
+                <div class="skeleton-line text"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="comments-items-list" id="comments-items-list">
+          <!-- 실시간 댓글 항목 동적 렌더링 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OLED 화면 끄기 / 절전 슬립 모드 오버레이 (순수 블랙 #000000으로 화면 전력 0 소모 + 재생 지속) -->
+  <div id="oled-sleep-overlay" class="oled-sleep-overlay" style="display: none;">
+    <div class="oled-sleep-content">
+      <div style="font-size: 2.2rem; margin-bottom: 12px; color: #aaa;">
+        <i data-lucide="moon" style="width: 36px; height: 36px;"></i>
+      </div>
+      <div class="oled-sleep-title">화면 끄기 절전 모드</div>
+      <div class="oled-sleep-sub" id="oled-sleep-track-name">Streamvance Music</div>
+      <div class="oled-sleep-hint">화면을 두 번 탭(더블 클릭)하면 해제됩니다</div>
+    </div>
+  </div>
+
   <!-- Audio Elements & Native Mobile PiP Video Bridge -->
   <audio id="main-audio" preload="metadata"></audio>
+  <audio id="streamvance-bg-audio-anchor" preload="auto" loop playsinline style="display: none;"></audio>
   <video id="native-pip-video" playsinline autoplay style="position: fixed; bottom: 0; right: 0; width: 10px; height: 10px; opacity: 0.01; pointer-events: none; z-index: -999;"></video>
   <canvas id="native-pip-canvas" width="480" height="480" style="display: none;"></canvas>
 
