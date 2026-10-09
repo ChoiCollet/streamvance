@@ -364,8 +364,8 @@ function initApp() {
   const SPOTLIGHT_ARTISTS = [
     { name: "NewJeans", query: "NewJeans", image: "https://i.ytimg.com/vi/9wUKhEgnllc/hqdefault.jpg" },
     { name: "아이유 (IU)", query: "아이유", image: "https://i.ytimg.com/vi/JleoAppaxi0/hqdefault.jpg" },
-    { name: "LE SSERAFIM", query: "LE SSERAFIM", image: "https://i.ytimg.com/vi/f0FDOw3zvGo/hqdefault.jpg" },
-    { name: "IVE (아이브)", query: "IVE", image: "https://i.ytimg.com/vi/pXbugSyo0tI/hqdefault.jpg" },
+    { name: "LE SSERAFIM", query: "LE SSERAFIM", image: "https://i.ytimg.com/vi/hLvWy2b857I/hqdefault.jpg" },
+    { name: "IVE (아이브)", query: "IVE", image: "https://i.ytimg.com/vi/6ZUIwj3FgUY/hqdefault.jpg" },
     { name: "aespa (에스파)", query: "aespa", image: "https://i.ytimg.com/vi/phuiiNCxRMg/hqdefault.jpg" },
     { name: "ROSÉ", query: "ROSÉ", image: "https://i.ytimg.com/vi/ekr2nIex040/hqdefault.jpg" },
     { name: "성시경", query: "성시경", image: "https://i.ytimg.com/vi/3_nnLq4D3tc/hqdefault.jpg" },
@@ -490,7 +490,11 @@ function initApp() {
       if (match) {
         if (!personalized.find(p => p.name === match.name)) personalized.push(match);
       } else {
-        const sampleCover = allTracks.find(t => (t.artist || '').includes(name))?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500';
+        const nLower = name.toLowerCase();
+        const matched = allTracks.find(t => (t.artist || '').toLowerCase().includes(nLower)) ||
+                        Array.from(ui.likedTracksMap.values()).find(t => (t.artist || '').toLowerCase().includes(nLower)) ||
+                        (ui.playHistory || []).find(t => (t.artist || '').toLowerCase().includes(nLower));
+        const sampleCover = matched?.cover || (defaultList[0] && defaultList[0].image) || 'https://i.ytimg.com/vi/9wUKhEgnllc/hqdefault.jpg';
         personalized.push({ name: name, query: name, image: sampleCover });
       }
     });
@@ -513,7 +517,15 @@ function initApp() {
     const spotlightTitle = document.getElementById('spotlight-artist-name');
     const spotlightImg = document.getElementById('spotlight-artist-img');
     if (spotlightTitle) spotlightTitle.textContent = artist.name;
-    if (spotlightImg && artist.image) spotlightImg.src = artist.image;
+    if (spotlightImg) {
+      if (artist.image) spotlightImg.src = artist.image;
+      spotlightImg.alt = artist.name;
+      spotlightImg.onerror = function() {
+        if (typeof window.handleArtistImgError === 'function') {
+          window.handleArtistImgError(this, artist.name);
+        }
+      };
+    }
 
     // 1) 사전 준비된 해당 아티스트 고유 트랙 확보
     let artistTracks = SPOTLIGHT_ARTIST_TRACKS[artist.name] || [];

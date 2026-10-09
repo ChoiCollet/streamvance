@@ -364,9 +364,6 @@ export class AudioPlayer {
       try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
     }
   }
-      try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
-    }
-  }
 
   stopBgKeepAlive() {
     if (this.bgKeepAliveAudio && !this.bgKeepAliveAudio.paused) {

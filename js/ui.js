@@ -19,6 +19,20 @@ if (typeof window !== 'undefined') {
       img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' width='100%25' height='100%25'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%231f1c2c'/%3E%3Cstop offset='100%25' stop-color='%23928dab'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23g)'/%3E%3Cpath d='M40 68a8 8 0 1 1-4-6.9V32l24-6v30a8 8 0 1 1-4-6.9V37l-16 4v27z' fill='%23ffffff' opacity='0.85'/%3E%3C/svg%3E";
     }
   };
+
+  window.handleArtistImgError = function(img, artistName) {
+    if (!img) return;
+    const src = img.src || '';
+    if (src.includes('maxresdefault.jpg')) {
+      img.src = src.replace('maxresdefault.jpg', 'hqdefault.jpg');
+    } else if (src.includes('hqdefault.jpg')) {
+      img.src = src.replace('hqdefault.jpg', 'mqdefault.jpg');
+    } else if (!img.dataset.fallbackApplied) {
+      img.dataset.fallbackApplied = 'true';
+      const initial = (artistName || img.alt || 'A').trim().charAt(0).toUpperCase();
+      img.src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='ag' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%234f46e5'/%3E%3Cstop offset='100%25' stop-color='%23ec4899'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23ag)'/%3E%3Ctext x='50' y='64' font-family='sans-serif' font-size='44' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3E${encodeURIComponent(initial)}%3C/text%3E%3C/svg%3E`;
+    }
+  };
 }
 
 export class UIManager {
@@ -417,12 +431,15 @@ export class UIManager {
   // 3-1. 아티스트 퀵 선택 칩 바 렌더링 (특정 아티스트 선택 시 해당 아티스트 노래만 표시)
   renderSpotlightChips(artists, currentIndex, onSelect) {
     if (!this.dom.spotlightArtistChips) return;
-    this.dom.spotlightArtistChips.innerHTML = artists.map((artist, idx) => `
-      <button class="artist-chip ${idx === currentIndex ? 'active' : ''}" data-artist-index="${idx}">
-        <img class="artist-chip-avatar" src="${artist.image || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artist.name}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100';">
-        <span>${artist.name}</span>
-      </button>
-    `).join('');
+    this.dom.spotlightArtistChips.innerHTML = artists.map((artist, idx) => {
+      const safeName = (artist.name || '').replace(/'/g, "\\'");
+      return `
+        <button class="artist-chip ${idx === currentIndex ? 'active' : ''}" data-artist-index="${idx}">
+          <img class="artist-chip-avatar" src="${artist.image || 'https://i.ytimg.com/vi/9wUKhEgnllc/hqdefault.jpg'}" alt="${artist.name}" loading="lazy" onerror="this.onerror=null;if(typeof window.handleArtistImgError==='function'){window.handleArtistImgError(this, '${safeName}');}">
+          <span>${artist.name}</span>
+        </button>
+      `;
+    }).join('');
 
     this.dom.spotlightArtistChips.querySelectorAll('.artist-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1175,7 +1192,7 @@ export class UIManager {
             <h2 class="section-title" style="font-size: 1.2rem; margin-bottom: 14px;">상위 검색결과</h2>
             <div class="artist-top-card" id="artist-top-card" data-artist="${artistInfo.name}">
               <div class="artist-top-header" id="btn-search-artist-header" title="${artistInfo.name}의 모든 노래 보러가기">
-                <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100'}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;if(typeof window.handleTrackImgError==='function'){window.handleTrackImgError(this);}">
+                <img src="${artistInfo.avatar || topArtistTracks[0]?.cover || ''}" alt="${artistInfo.name}" class="artist-top-avatar" onerror="this.onerror=null;if(typeof window.handleArtistImgError==='function'){window.handleArtistImgError(this, '${(artistInfo.name || '').replace(/'/g, "\\'")}');}">
                 <div class="artist-top-info">
                   <div class="artist-top-name" id="btn-search-artist-name-title">${artistInfo.name}</div>
                   <div class="artist-top-subs">${artistInfo.subscribers || '아티스트'} • 채널 보기</div>
