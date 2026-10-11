@@ -65,6 +65,11 @@ function initApp() {
     ui.renderQueue(player.queue, player.currentIndex);
     pipManager.updatePiPContent();
 
+    const oledTitle = document.getElementById('oled-sleep-track-name');
+    const oledArtist = document.getElementById('oled-sleep-artist-name');
+    if (oledTitle) oledTitle.textContent = track.title;
+    if (oledArtist) oledArtist.textContent = track.artist;
+
     // 앨범 아트 대표 색상 추출 및 배경 앰비언트 그라데이션 동적 적용 (100% 불투명)
     colorExtractor.extract(track.cover, rgb => {
       colorExtractor.applyToDOM(rgb);
@@ -105,8 +110,8 @@ function initApp() {
     if (nextTrack1) lyricsService.prefetchLyrics(nextTrack1);
     if (nextTrack2) lyricsService.prefetchLyrics(nextTrack2);
 
-    // 재생 히스토리 반영하여 빠른 선곡 실시간 갱신
-    updatePersonalizedQuickPicks();
+    // 재생 중인 트랙의 UI 강조 상태 갱신 (리스트 재렌더링/셔플 방지)
+    ui.updatePlayStateUI(player.isPlaying);
 
     // 실시간 댓글 백그라운드 프리페치 (사용자가 댓글 버튼 클릭 시 0ms 즉각 로드)
     const curVid = track.videoId || (track.id || '').replace(/^yt-/, '');
@@ -322,8 +327,6 @@ function initApp() {
       if (topGenres.has(track.genre)) score += 15;
       if (topArtists.has(tArtist)) score += 20;
       if (track.mood === taste.topMood || track.mood === currentMood) score += 12;
-      
-      score += Math.random() * 5;
       return { track, score };
     });
 
@@ -338,10 +341,47 @@ function initApp() {
     return list.slice(0, 16);
   }
 
+  // 실시간 음원 스트림 백그라운드 사전 캐싱 헬퍼 (곡 선택 시 0ms 즉각 재생)
+  const _prefetchedVids = new Set();
+  function prefetchTracks(tracks) {
+    if (!tracks || !tracks.length) return;
+    const vids = [];
+    for (const t of tracks) {
+      if (!t) continue;
+      const vid = t.videoId || (typeof t.id === 'string' && t.id.startsWith('yt-') ? t.id.replace('yt-', '') : (typeof t.id === 'string' && t.id.length === 11 ? t.id : ''));
+      if (vid && vid.length === 11 && !_prefetchedVids.has(vid)) {
+        _prefetchedVids.add(vid);
+        vids.push(vid);
+      }
+    }
+    if (vids.length > 0) {
+      fetch(`/api/prefetch?id=${encodeURIComponent(vids.slice(0, 10).join(','))}`).catch(() => {});
+    }
+  }
+  window.prefetchTracks = prefetchTracks;
+
+  // 사용자 터치/마우스 오버 즉각 선제적 프리페치 (클릭 도착 전 이미 서버 캐시 완료 -> 0ms 체감)
+  const triggerPrefetchForElement = (target) => {
+    const card = target?.closest?.('[data-track-id]');
+    if (!card) return;
+    const trackId = card.getAttribute('data-track-id');
+    if (!trackId) return;
+    const t = (window.allTracks || []).find(x => x.id === trackId) || (ui?.playHistory || []).find(x => x.id === trackId);
+    const vid = t?.videoId || (trackId.startsWith('yt-') ? trackId.replace('yt-', '') : (trackId.length === 11 ? trackId : ''));
+    if (vid && vid.length === 11 && !_prefetchedVids.has(vid)) {
+      _prefetchedVids.add(vid);
+      fetch(`/api/prefetch?id=${vid}`).catch(() => {});
+    }
+  };
+
+  document.addEventListener('pointerenter', (e) => triggerPrefetchForElement(e.target), { capture: true, passive: true });
+  document.addEventListener('touchstart', (e) => triggerPrefetchForElement(e.target), { capture: true, passive: true });
+
   function updatePersonalizedQuickPicks() {
     const personalized = getPersonalizedQuickPicks();
     ui.renderQuickPicks(personalized);
     if (window.lucide) window.lucide.createIcons();
+    prefetchTracks(personalized.slice(0, 8));
   }
 
   // 자동재생 토글 상태 (Screenshot 1: 무제한 재생을 위해 유사한 노래를 추가)
@@ -427,7 +467,12 @@ function initApp() {
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
-            const freshTracks = data.tracks.filter(t => !queueVideoIds.has(t.videoId) && !queueVideoIds.has(t.id));
+            const freshTracks = data.tracks.filter(t => 
+              !queueVideoIds.has(t.videoId) && 
+              !queueVideoIds.has(t.id) && 
+              !isNonMusicTrack(t) && 
+              !isCompilationTrack(t)
+            );
             if (freshTracks.length > 0) {
               freshTracks.slice(0, 5).forEach(t => player.queue.push(t));
               ui.renderQueue(player.queue, player.currentIndex);
@@ -684,6 +729,7 @@ function initApp() {
             }
           });
           ui.renderTopCharts(chartTracks);
+          prefetchTracks(chartTracks.slice(0, 8));
 
           // 둘러보기 히어로 배너: 선택된 국가의 1위곡으로 동적 연동
           const top1 = chartTracks.find(t => !isCompilationTrack(t) && !isNonMusicTrack(t)) || authenticGlobalTop1Fallback;
@@ -1574,32 +1620,38 @@ function initApp() {
     const persistent = document.getElementById('yt-player-persistent-wrap');
     if (!persistent) return;
 
-    const isVideoMode = document.body.classList.contains('video-mode-active') && 
-                        document.body.classList.contains('player-modal-open');
+    const isModalOpen = document.body.classList.contains('player-modal-open') || 
+                        document.getElementById('full-player-modal')?.classList.contains('open');
+    const isVideoMode = (currentMediaMode === 'video' || document.body.classList.contains('video-mode-active')) && isModalOpen;
 
     if (!isVideoMode) {
       persistent.style.setProperty('position', 'fixed', 'important');
-      persistent.style.setProperty('top', '0px', 'important');
-      persistent.style.setProperty('left', '0px', 'important');
-      persistent.style.setProperty('width', '320px', 'important');
-      persistent.style.setProperty('height', '240px', 'important');
+      persistent.style.setProperty('bottom', '84px', 'important');
+      persistent.style.setProperty('right', '12px', 'important');
+      persistent.style.setProperty('top', 'auto', 'important');
+      persistent.style.setProperty('left', 'auto', 'important');
+      persistent.style.setProperty('width', '200px', 'important');
+      persistent.style.setProperty('height', '200px', 'important');
       persistent.style.setProperty('transform', 'none', 'important');
-      persistent.style.setProperty('opacity', '1', 'important');
+      persistent.style.setProperty('opacity', '0.005', 'important');
       persistent.style.setProperty('pointer-events', 'none', 'important');
       persistent.style.setProperty('z-index', '-999', 'important');
-      persistent.style.setProperty('border-radius', '0px', 'important');
+      persistent.style.setProperty('border-radius', '8px', 'important');
       return;
     }
+
+    const isMobileDrawerOpen = window.innerWidth <= 768 && 
+      document.getElementById('modal-content-panel')?.classList.contains('drawer-expanded');
 
     const videoWrap = document.getElementById('modal-video-wrap');
     const stageMedia = document.getElementById('stage-media-wrap');
     const visualPanel = document.querySelector('.modal-visual-panel');
 
     let rect = null;
-    if (videoWrap && videoWrap.offsetHeight > 30 && videoWrap.offsetWidth > 30) {
-      rect = videoWrap.getBoundingClientRect();
-    } else if (stageMedia && stageMedia.offsetHeight > 30 && stageMedia.offsetWidth > 30) {
+    if (stageMedia && stageMedia.offsetHeight > 30 && stageMedia.offsetWidth > 30) {
       rect = stageMedia.getBoundingClientRect();
+    } else if (videoWrap && videoWrap.offsetHeight > 30 && videoWrap.offsetWidth > 30) {
+      rect = videoWrap.getBoundingClientRect();
     }
 
     let top = 0, left = 0, width = 560, height = 315;
@@ -1611,17 +1663,17 @@ function initApp() {
       height = Math.round(rect.height);
     } else if (visualPanel) {
       const vpRect = visualPanel.getBoundingClientRect();
-      const calcW = Math.max(280, Math.min(vpRect.width - 32, 560));
+      const calcW = Math.max(280, Math.min(vpRect.width - 24, 560));
       const calcH = Math.round(calcW * 9 / 16);
       width = calcW;
       height = calcH;
       left = Math.round(vpRect.left + (vpRect.width - calcW) / 2);
-      top = Math.round(vpRect.top + 20);
+      top = Math.round(vpRect.top + 16);
     } else {
-      width = Math.min(window.innerWidth * 0.9, 560);
+      width = Math.min(window.innerWidth * 0.92, 560);
       height = Math.round(width * 9 / 16);
       left = Math.round((window.innerWidth - width) / 2);
-      top = Math.round(window.innerHeight * 0.2);
+      top = Math.round(window.innerHeight * 0.16);
     }
 
     persistent.style.setProperty('position', 'fixed', 'important');
@@ -1631,8 +1683,11 @@ function initApp() {
     persistent.style.setProperty('height', `${height}px`, 'important');
     persistent.style.setProperty('transform', 'none', 'important');
     persistent.style.setProperty('opacity', '1', 'important');
-    persistent.style.setProperty('pointer-events', 'auto', 'important');
-    persistent.style.setProperty('z-index', '999', 'important');
+    persistent.style.setProperty('visibility', 'visible', 'important');
+    persistent.style.setProperty('display', 'block', 'important');
+    // 모바일에서 가사/대기열 서랍이 전체 확장되었을 때는 터치가 서랍(가사 스크롤)으로 안전 전달되도록 pointer-events: none, 서랍 닫히면 auto
+    persistent.style.setProperty('pointer-events', isMobileDrawerOpen ? 'none' : 'auto', 'important');
+    persistent.style.setProperty('z-index', '950', 'important');
     persistent.style.setProperty('border-radius', '12px', 'important');
   };
 
@@ -1827,6 +1882,9 @@ function initApp() {
         ui.showToast('현재 곡은 오디오 전용 음원입니다.');
         return;
       }
+      if (typeof player.switchToVideoMode === 'function') {
+        player.switchToVideoMode();
+      }
       btnSong?.classList.remove('active');
       btnVideo?.classList.add('active');
       albumArtWrap?.classList.add('hidden');
@@ -1840,6 +1898,9 @@ function initApp() {
       setTimeout(syncVideoPosition, 150);
       setTimeout(syncVideoPosition, 300);
     } else {
+      if (typeof player.switchToAudioMode === 'function') {
+        player.switchToAudioMode();
+      }
       btnSong?.classList.add('active');
       btnVideo?.classList.remove('active');
       albumArtWrap?.classList.remove('hidden');
@@ -1850,6 +1911,7 @@ function initApp() {
       syncVideoPosition();
     }
   };
+  window.switchMediaMode = switchMediaMode;
 
   window.addEventListener('resize', syncVideoPosition);
   window.addEventListener('orientationchange', syncVideoPosition);
@@ -2016,6 +2078,7 @@ function initApp() {
   if (mobileDrawerHandle && modalContentPanel) {
     mobileDrawerHandle.addEventListener('click', () => {
       modalContentPanel.classList.toggle('drawer-expanded');
+      syncVideoPosition();
     });
 
     let touchStartY = 0;
@@ -2033,6 +2096,7 @@ function initApp() {
         // 아래로 스와이프 -> 닫기
         modalContentPanel.classList.remove('drawer-expanded');
       }
+      syncVideoPosition();
     }, { passive: true });
   }
 
@@ -2253,6 +2317,126 @@ function initApp() {
     }
   });
 
+  // ==========================================================================
+  // 12. 모바일 OLED 화면 끄기 / 포켓 절전 모드 (배터리 0% 소모 & 무중단 연속 재생)
+  // ==========================================================================
+  const oledSleepOverlay = document.getElementById('oled-sleep-overlay');
+  const oledClock = document.getElementById('oled-sleep-clock');
+  const oledTrackName = document.getElementById('oled-sleep-track-name');
+  const oledArtistName = document.getElementById('oled-sleep-artist-name');
+  const btnPillPocketMode = document.getElementById('btn-pill-pocket-mode');
+  const btnSleepMode = document.getElementById('btn-modal-sleep-mode');
+  const btnOledUnlock = document.getElementById('btn-oled-unlock');
+
+  let oledClockTimer = null;
+  let oledWakeLock = null;
+
+  const updateOledClock = () => {
+    if (!oledClock) return;
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    oledClock.textContent = `${h}:${m}`;
+  };
+
+  const openOledPocketMode = async () => {
+    if (!oledSleepOverlay) return;
+    const curTrack = player.getCurrentTrack();
+    if (oledTrackName) oledTrackName.textContent = curTrack?.title || '재생 중인 곡 없음';
+    if (oledArtistName) oledArtistName.textContent = curTrack?.artist || 'Streamvance Music';
+
+    updateOledClock();
+    if (oledClockTimer) clearInterval(oledClockTimer);
+    oledClockTimer = setInterval(updateOledClock, 1000);
+
+    oledSleepOverlay.style.display = 'flex';
+    document.body.classList.add('oled-sleep-active');
+
+    // 화면 켜짐 유지 (OLED 블랙 상태로 모바일 브라우저의 비디오 스로틀링 원천 방어)
+    try {
+      if ('wakeLock' in navigator && !oledWakeLock) {
+        oledWakeLock = await navigator.wakeLock.request('screen');
+        oledWakeLock.addEventListener('release', () => {
+          oledWakeLock = null;
+        });
+      }
+    } catch (e) {}
+
+    // 모바일 오디오 & 비디오 앵커 재확인
+    player.ensureAudioSound();
+    player.startBgKeepAlive();
+    if (player.isPlaying && !player.isUserPaused) {
+      player.forceResumePlayback();
+    }
+
+    ui.showToast('포켓 절전 모드 실행: 화면이 소등되며 주머니 속에서도 음악이 멈추지 않습니다.');
+  };
+
+  const closeOledPocketMode = () => {
+    if (!oledSleepOverlay) return;
+    oledSleepOverlay.style.display = 'none';
+    document.body.classList.remove('oled-sleep-active');
+
+    if (oledClockTimer) {
+      clearInterval(oledClockTimer);
+      oledClockTimer = null;
+    }
+    if (oledWakeLock) {
+      try { oledWakeLock.release(); } catch (e) {}
+      oledWakeLock = null;
+    }
+    ui.showToast('절전 모드가 해제되었습니다.');
+  };
+
+  const btnHeaderSleepMode = document.getElementById('btn-header-sleep-mode');
+  if (btnHeaderSleepMode) {
+    btnHeaderSleepMode.addEventListener('click', openOledPocketMode);
+  }
+  if (btnPillPocketMode) {
+    btnPillPocketMode.addEventListener('click', openOledPocketMode);
+  }
+  if (btnSleepMode) {
+    btnSleepMode.addEventListener('click', openOledPocketMode);
+  }
+  document.getElementById('sheet-act-pocket-mode')?.addEventListener('click', () => {
+    closeTrackMoreSheet();
+    openOledPocketMode();
+  });
+  if (btnOledUnlock) {
+    btnOledUnlock.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeOledPocketMode();
+    });
+  }
+
+  // 화면 더블 탭 시 절전 모드 해제
+  if (oledSleepOverlay) {
+    let lastTap = 0;
+    oledSleepOverlay.addEventListener('click', (e) => {
+      const now = Date.now();
+      if (now - lastTap < 450) {
+        closeOledPocketMode();
+      } else {
+        lastTap = now;
+        const hint = oledSleepOverlay.querySelector('.oled-sleep-hint');
+        if (hint) {
+          hint.style.color = '#fff';
+          setTimeout(() => { hint.style.color = '#777'; }, 800);
+        }
+      }
+    });
+  }
+
+  // 모바일 백그라운드 재생 가이드 안내
+  document.getElementById('sheet-act-bg-guide')?.addEventListener('click', () => {
+    closeTrackMoreSheet();
+    const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+    const guideMsg = isSamsung 
+      ? '💡 삼성인터넷 팁: 1) 더보기(⋮) > 설정 > 유용한 기능 > [백그라운드 재생: 켜짐] 확인 2) 화면을 끈 후 소리가 멈추면 잠금화면 알림창의 [▶ 재생]을 누르거나, 상단 [절전 모드]를 누르면 주머니 속에서도 100% 연속 재생됩니다!'
+      : '💡 모바일 크롬 팁: 유튜브 정책으로 화면이 꺼지면 자동 일시정지될 수 있습니다. 1) 잠금화면 알림창의 [▶ 재생] 버튼을 1번 누르시거나, 2) 상단 [절전 모드]를 누르고 주머니에 넣으시면 화면 끄기 상태로 무중단 연속 재생됩니다!';
+    alert(guideMsg);
+  });
+
   // 오프라인 저장 콘텐츠 보관함 뷰 표시 함수 (정상 작동 보장)
   async function openOfflineLibrary() {
     closeModal();
@@ -2379,9 +2563,10 @@ function initApp() {
       const activePane = document.getElementById(`pane-${targetPane}`);
       if (activePane) activePane.classList.add('active');
 
-      // 모바일에서 탭 클릭 시 서랍 자동 오픈
+      // 모바일에서 탭 클릭 시 서랍 자동 오픈 및 비디오 위치 동기화 (가사/대기열 가림 방지)
       if (window.innerWidth <= 768 && modalContentPanel) {
         modalContentPanel.classList.add('drawer-expanded');
+        syncVideoPosition();
       }
     });
   });
@@ -2620,6 +2805,7 @@ function initApp() {
       });
 
       ui.renderSearchResults(val, searchRes, false);
+      prefetchTracks(onlineTracks.slice(0, 8));
     } catch (err) {
       console.warn("Online search error:", err);
       ui.renderSearchResults(val, localFiltered, false);
@@ -2808,39 +2994,7 @@ function initApp() {
     });
   }
 
-  // 4) OLED 화면 끄기 / 절전 슬립 모드 (화면 꺼짐 시 음악 유지용)
-  const btnSleepMode = document.getElementById('btn-modal-sleep-mode');
-  const oledOverlay = document.getElementById('oled-sleep-overlay');
-  const oledTrackName = document.getElementById('oled-sleep-track-name');
 
-  if (btnSleepMode && oledOverlay) {
-    btnSleepMode.addEventListener('click', () => {
-      const cur = player.getCurrentTrack();
-      if (oledTrackName && cur) {
-        oledTrackName.textContent = `${cur.title} - ${cur.artist}`;
-      }
-      oledOverlay.style.display = 'flex';
-      if ('wakeLock' in navigator) {
-        navigator.wakeLock.request('screen').catch(() => {});
-      }
-    });
-
-    let lastTap = 0;
-    oledOverlay.addEventListener('click', () => {
-      const now = Date.now();
-      if (now - lastTap < 400) {
-        // 더블 탭 시 해제
-        oledOverlay.style.display = 'none';
-      } else {
-        lastTap = now;
-        const hint = oledOverlay.querySelector('.oled-sleep-hint');
-        if (hint) {
-          hint.style.color = '#fff';
-          setTimeout(() => { hint.style.color = '#777'; }, 800);
-        }
-      }
-    });
-  }
 
   // 3) 댓글 바텀시트 닫기 및 정렬 필터 연동
   const btnCloseComments = document.getElementById('btn-close-comments');

@@ -98,7 +98,7 @@ a {
   position: relative;
   background-color: var(--bg-base);
   overflow: hidden;
-  z-index: 10; /* 배경 뒤에 상주하는 백그라운드 비디오를 가려 사용자 UI를 완벽히 보호 */
+  z-index: auto; /* 모달, 시트, 가사 서랍이 fixed 레이어와 상호작용하도록 스태킹 컨텍스트 개방 */
 }
 
 /* ==========================================================================
@@ -1989,13 +1989,49 @@ a {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
   position: relative;
-  z-index: 20;
+  z-index: 1100;
 }
 
 .modal-header .ytm-media-toggle-pill {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+}
+
+.modal-header-left-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+}
+
+.btn-header-sleep-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: transparent;
+  color: #e0e0e0;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-header-sleep-mode:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.btn-header-sleep-mode:active {
+  transform: scale(0.94);
+}
+
+.btn-header-sleep-mode svg {
+  width: 19px;
+  height: 19px;
 }
 
 .modal-header-right-actions {
@@ -2159,13 +2195,14 @@ body.is-fullscreen .icon-fs-min {
    삼성인터넷 '배경에서 재생' 및 크롬의 오클루전(투명도 0.01 미만 차단) 감지를 완벽 우회하고 상시 재생 보장! */
 .yt-player-persistent-wrap {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: auto;
-  width: 320px;
-  height: 240px;
-  z-index: -999;
-  opacity: 1;
+  bottom: 84px;
+  right: 12px;
+  top: auto;
+  left: auto;
+  width: 200px;
+  height: 200px;
+  z-index: 8;
+  opacity: 0.005;
   pointer-events: none;
   overflow: hidden;
   background: transparent;
@@ -2173,7 +2210,7 @@ body.is-fullscreen .icon-fs-min {
   clip-path: none;
   visibility: visible;
   transition: border-radius 0.2s ease;
-  will-change: top, left, width, height;
+  will-change: top, left, width, height, opacity;
 }
 
 .yt-player-persistent-wrap iframe,
@@ -2195,12 +2232,14 @@ body.player-modal-open.video-mode-active .stage-media-wrap {
   margin: 0 auto !important;
 }
 
-body.player-modal-open.video-mode-active .yt-player-persistent-wrap {
-  z-index: 999;
-  pointer-events: auto;
-  clip-path: none;
-  border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9);
+body.player-modal-open.video-mode-active .yt-player-persistent-wrap,
+body.video-mode-active .yt-player-persistent-wrap {
+  z-index: 950 !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+  clip-path: none !important;
+  border-radius: 12px !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
 }
 
 /* 동영상 제어 툴바 (PIP 미니 플레이어, 전체화면 버튼) - 영상 위에 상시 안전 노출 */
@@ -2351,6 +2390,8 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+  z-index: 1000;
 }
 
 .modal-right-tabs {
@@ -2978,7 +3019,7 @@ body.player-modal-open.video-mode-active .video-corner-actions {
 
   /* 6. 전체화면 플레이어 모달 모바일 튜닝 */
   .full-player-modal {
-    z-index: 900 !important;
+    z-index: 800 !important;
     width: 100vw !important;
     height: 100dvh !important;
     background-color: #120b0a !important;
@@ -3258,7 +3299,7 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     border-top-left-radius: 18px;
     border-top-right-radius: 18px;
     border-top: 1px solid rgba(255, 255, 255, 0.15);
-    z-index: 950;
+    z-index: 1050;
     transition: height 0.32s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
     overflow: hidden;
@@ -3268,6 +3309,7 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   .modal-content-panel.drawer-expanded {
     height: calc(100dvh - 80px) !important;
     background: #141414 !important;
+    z-index: 1050 !important;
   }
 
   .mobile-drawer-drag-bar {
@@ -3360,6 +3402,29 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     flex-shrink: 0;
   }
 
+  .track-row-played-date {
+    font-size: 0.68rem;
+    padding: 1px 4px;
+    margin-left: 4px;
+    margin-right: 0;
+  }
+  .track-row-played-date svg,
+  .track-row-played-date i {
+    display: none;
+  }
+  .track-row-card .track-row-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .track-row-card .track-row-title {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* 10. 메인 컨텐츠 스크롤 영역 여백 */
   .content-scroll-area {
     padding: 12px 14px calc(140px + env(safe-area-inset-bottom, 0px)) 14px;
@@ -3390,6 +3455,7 @@ body.player-modal-open.video-mode-active .video-corner-actions {
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -5002,6 +5068,7 @@ body.player-modal-open.video-mode-active .video-corner-actions {
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -7022,27 +7089,124 @@ body.comments-sheet-open #yt-player-persistent-wrap {
 }
 
 .track-row-played-date {
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   color: #8ab4f8;
-  background: rgba(138, 180, 248, 0.12);
-  border: 1px solid rgba(138, 180, 248, 0.22);
-  padding: 2px 8px;
+  background: rgba(138, 180, 248, 0.1);
+  border: 1px solid rgba(138, 180, 248, 0.2);
+  padding: 1px 5px;
   border-radius: 4px;
   white-space: nowrap;
-  margin-left: 8px;
-  margin-right: 4px;
+  margin-left: 6px;
+  margin-right: 2px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   font-weight: 500;
   flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .track-row-played-date i,
 .track-row-played-date svg {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
 }
 
+/* ==========================================================================
+   19. 모바일 OLED 화면 끄기 / 절전 슬립 모드 (배터리 0 소모 & 무중단 백그라운드 재생)
+   ========================================================================== */
+.oled-sleep-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000000 !important;
+  z-index: 2147483647 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  opacity: 1;
+  cursor: pointer;
+  animation: oledFadeIn 0.3s ease;
+}
 
+@keyframes oledFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
+.oled-sleep-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 20px;
+  gap: 18px;
+  max-width: 340px;
+  pointer-events: auto;
+}
+
+.oled-sleep-clock {
+  font-size: 3.6rem;
+  font-weight: 300;
+  color: #383838;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.oled-sleep-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oled-sleep-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #555555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.oled-sleep-sub {
+  font-size: 0.85rem;
+  color: #383838;
+}
+
+.oled-sleep-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #3a3a3a;
+  margin-top: 18px;
+}
+
+.oled-unlock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #888888;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.2s ease;
+}
+
+.oled-unlock-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  transform: scale(0.97);
+}

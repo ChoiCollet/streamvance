@@ -12,9 +12,145 @@ import re
 import sys
 import os
 import time
+import subprocess
+import threading
+import hashlib
+import concurrent.futures
 
 PORT = 3000
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+
+# yt-dlp 오디오 URL 캐시 (videoId -> {url, expires, format})
+_CACHE_FILE = os.path.join(DIRECTORY, '.audio_cache.json')
+_audio_url_cache = {}
+_audio_url_cache_lock = threading.Lock()
+_AUDIO_CACHE_TTL = 14400  # 4시간 (YouTube 스트림 URL 유효 시간 완벽 커버)
+
+def _load_disk_cache():
+    global _audio_url_cache
+    if os.path.exists(_CACHE_FILE):
+        try:
+            with open(_CACHE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                now = time.time()
+                valid = {k: v for k, v in data.items() if v.get('expires', 0) > now}
+                with _audio_url_cache_lock:
+                    _audio_url_cache.update(valid)
+        except Exception:
+            pass
+
+def _save_disk_cache():
+    try:
+        with _audio_url_cache_lock:
+            now = time.time()
+            data = {k: v for k, v in _audio_url_cache.items() if v.get('expires', 0) > now}
+        with open(_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+# 시작 시 영구 디스크 캐시 로드
+_load_disk_cache()
+
+_prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=6)
+_thread_local = threading.local()
+
+def get_thread_ydl():
+    """스레드별 독립 YoutubeDL 인스턴스 (안드로이드 클라이언트 고속 추출, 락 경합 0)"""
+    if not hasattr(_thread_local, 'ydl') or _thread_local.ydl is None:
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'format': 'ba[ext=m4a]/ba[ext=webm]/ba/b',
+                'quiet': True,
+                'no_warnings': True,
+                'noplaylist': True,
+                'nocheckcertificate': True,
+                'skip_download': True,
+                'extract_flat': False,
+                'youtube_include_dash_manifest': False,
+                'youtube_include_hls_manifest': False,
+                'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+                'no_color': True,
+            }
+            _thread_local.ydl = yt_dlp.YoutubeDL(ydl_opts)
+        except Exception:
+            _thread_local.ydl = None
+    return _thread_local.ydl
+
+def _get_cached_audio_url(video_id):
+    """캐시된 오디오 URL 반환. 만료되었으면 None."""
+    with _audio_url_cache_lock:
+        entry = _audio_url_cache.get(video_id)
+        if entry and time.time() < entry['expires']:
+            return entry
+    return None
+
+def _set_cached_audio_url(video_id, url, format_info=''):
+    """오디오 URL을 캐시에 저장 및 디스크 동기화."""
+    with _audio_url_cache_lock:
+        _audio_url_cache[video_id] = {
+            'url': url,
+            'format': format_info,
+            'expires': time.time() + _AUDIO_CACHE_TTL
+        }
+    # 비동기로 디스크 캐시 동기화
+    threading.Thread(target=_save_disk_cache, daemon=True).start()
+
+def _prefetch_audio_url(vid):
+    if not vid or _get_cached_audio_url(vid):
+        return
+    try:
+        url, fmt = extract_audio_stream_url(vid)
+        if url:
+            _set_cached_audio_url(vid, url, fmt)
+    except Exception:
+        pass
+
+def queue_prefetch_vids(video_ids):
+    """차트/검색/추천/대기열 상위 곡들의 오디오 스트림 URL을 백그라운드 사전 캐싱 (클릭 시 0ms 즉시 재생)"""
+    if not video_ids:
+        return
+    for vid in video_ids[:12]:
+        if vid and not _get_cached_audio_url(vid):
+            _prefetch_executor.submit(_prefetch_audio_url, vid)
+
+def extract_audio_stream_url(video_id):
+    """yt-dlp로 오디오 스트림 URL 고속 추출. 스레드 독립 인스턴스로 동시 요청 지연 0 보장."""
+    ydl = get_thread_ydl()
+    if ydl:
+        try:
+            info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+            url = info.get('url')
+            fmt = info.get('format', 'audio only')
+            if url and url.startswith('http'):
+                return url, fmt
+        except Exception:
+            pass
+
+    # 2. subprocess yt-dlp 폴백
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, '-m', 'yt_dlp',
+                '--no-download',
+                '--print', 'urls',
+                '--print', 'format',
+                '-f', 'ba[ext=m4a]/ba[ext=webm]/ba/b',
+                '--no-playlist',
+                '--no-warnings',
+                '--no-check-certificates',
+                f'https://www.youtube.com/watch?v={video_id}'
+            ],
+            capture_output=True, text=True, timeout=12,
+            cwd=DIRECTORY
+        )
+        lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip()]
+        if len(lines) >= 1 and lines[0].startswith('http'):
+            return lines[0], (lines[1] if len(lines) > 1 else 'audio only')
+    except Exception:
+        pass
+    return None, None
 
 class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -23,6 +159,19 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         
+        # 서비스 워커 파일 전송 (PWA & 모바일 백그라운드 캐시 보강)
+        if parsed.path == '/sw.js':
+            sw_path = os.path.join(DIRECTORY, 'sw.js')
+            if os.path.exists(sw_path):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/javascript; charset=utf-8')
+                self.send_header('Service-Worker-Allowed', '/')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                with open(sw_path, 'rb') as f:
+                    self.wfile.write(f.read())
+                return
+
         # 실시간 유튜브 검색 API 엔드포인트: /api/search?q=...
         if parsed.path == '/api/search':
             query_params = urllib.parse.parse_qs(parsed.query)
@@ -33,6 +182,8 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 return
             
             results = self.search_youtube(q)
+            if isinstance(results, dict):
+                queue_prefetch_vids([t.get('videoId') for t in results.get('tracks', []) if t.get('videoId')])
             self.send_json(results)
             return
 
@@ -114,6 +265,8 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                     if not s.get('isCompilation') and s.get('duration', 0) <= 600
                 ]
 
+            if clean_tracks:
+                queue_prefetch_vids([t.get('videoId') for t in clean_tracks if t.get('videoId')])
             self.send_json(clean_tracks)
             return
 
@@ -150,13 +303,163 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({'videoId': '', 'tracks': []})
                 return
             related_data = self.fetch_youtube_related(vid, artist, title)
+            if isinstance(related_data, dict):
+                queue_prefetch_vids([t.get('videoId') for t in related_data.get('tracks', []) if t.get('videoId')])
             self.send_json(related_data)
             return
 
-        # 모바일 백그라운드 재생 방어용 무음 오디오 엔드포인트: /api/silent-stream
+        # ======================================================================
+        # 모바일 백그라운드 재생 핵심 엔진: yt-dlp 기반 오디오 스트림 추출 + 프록시
+        # ======================================================================
+
+        # 백그라운드 사전 캐싱 API: /api/prefetch?id=ID1,ID2,ID3...
+        if parsed.path == '/api/prefetch':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            ids_str = query_params.get('id', [''])[0].strip() or query_params.get('ids', [''])[0].strip()
+            vids = [v.strip() for v in ids_str.split(',') if v.strip() and re.match(r'^[a-zA-Z0-9_-]{11}$', v.strip())]
+            if vids:
+                queue_prefetch_vids(vids)
+            self.send_json({'status': 'ok', 'queued': len(vids)})
+            return
+
+        # 오디오 스트림 URL 추출 API: /api/audio-url?id=VIDEO_ID
+        if parsed.path == '/api/audio-url':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('id', [''])[0].strip() or query_params.get('videoId', [''])[0].strip()
+            if not vid or not re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
+                self.send_json({'error': 'Invalid video ID', 'audioUrl': ''})
+                return
+
+            # 캐시 확인
+            cached = _get_cached_audio_url(vid)
+            if cached:
+                self.send_json({
+                    'audioUrl': f'/api/audio-stream?id={vid}',
+                    'directUrl': cached['url'],
+                    'format': cached['format'],
+                    'cached': True
+                })
+                return
+
+            # yt-dlp로 오디오 URL 추출
+            audio_url, format_info = extract_audio_stream_url(vid)
+            if audio_url:
+                _set_cached_audio_url(vid, audio_url, format_info)
+                self.send_json({
+                    'audioUrl': f'/api/audio-stream?id={vid}',
+                    'directUrl': audio_url,
+                    'format': format_info,
+                    'cached': False
+                })
+            else:
+                self.send_json({'error': 'Failed to extract audio stream URL', 'audioUrl': ''})
+            return
+
+        # 오디오 프록시 스트리밍 API: /api/audio-stream?id=VIDEO_ID
+        # HTML5 <audio> 요소의 Range 요청(시크/탐색)을 완벽 지원하는 투명 프록시
+        if parsed.path == '/api/audio-stream':
+            query_params = urllib.parse.parse_qs(parsed.query)
+            vid = query_params.get('id', [''])[0].strip() or query_params.get('videoId', [''])[0].strip()
+            if not vid or not re.match(r'^[a-zA-Z0-9_-]{11}$', vid):
+                self.send_error(400, 'Invalid video ID')
+                return
+
+            # 캐시에서 URL 가져오기 (없으면 실시간 추출)
+            cached = _get_cached_audio_url(vid)
+            if not cached:
+                audio_url, format_info = extract_audio_stream_url(vid)
+                if audio_url:
+                    _set_cached_audio_url(vid, audio_url, format_info)
+                    cached = _get_cached_audio_url(vid)
+
+            if not cached:
+                self.send_error(502, 'Failed to extract audio stream')
+                return
+
+            audio_url = cached['url']
+
+            # 클라이언트의 Range 헤더 전달 (시크 지원)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',
+                'Connection': 'keep-alive',
+            }
+            range_header = self.headers.get('Range')
+            if range_header:
+                headers['Range'] = range_header
+
+            resp = None
+            try:
+                req = urllib.request.Request(audio_url, headers=headers)
+                resp = urllib.request.urlopen(req, timeout=15)
+            except urllib.error.HTTPError as e:
+                # URL이 만료된 경우(403, 410) 캐시 즉시 무효화 후 실시간 재추출 1회 즉각 재시도
+                if e.code in (403, 410):
+                    with _audio_url_cache_lock:
+                        _audio_url_cache.pop(vid, None)
+                    fresh_url, fresh_fmt = extract_audio_stream_url(vid)
+                    if fresh_url:
+                        _set_cached_audio_url(vid, fresh_url, fresh_fmt)
+                        try:
+                            req = urllib.request.Request(fresh_url, headers=headers)
+                            resp = urllib.request.urlopen(req, timeout=15)
+                        except Exception as e2:
+                            self.send_error(502, f'Stream retry error: {e2}')
+                            return
+                    else:
+                        self.send_error(502, 'Stream re-extraction failed')
+                        return
+                else:
+                    self.send_error(e.code, str(e.reason)[:100])
+                    return
+            except Exception as e:
+                self.send_error(502, f'Proxy error: {str(e)[:100]}')
+                return
+
+            try:
+                status = resp.getcode()
+                self.send_response(status)
+
+                # 응답 헤더 전달 (CORS + Content-Type + Range 지원)
+                content_type = resp.headers.get('Content-Type', 'audio/mp4')
+                self.send_header('Content-Type', content_type)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Headers', 'Range')
+                self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Cache-Control', 'public, max-age=3600')
+
+                content_length = resp.headers.get('Content-Length')
+                if content_length:
+                    self.send_header('Content-Length', content_length)
+
+                content_range = resp.headers.get('Content-Range')
+                if content_range:
+                    self.send_header('Content-Range', content_range)
+
+                self.end_headers()
+
+                # 청크 단위 스트리밍 (메모리 효율적 전송)
+                chunk_size = 65536  # 64KB
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    try:
+                        self.wfile.write(chunk)
+                    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                        break
+                resp.close()
+            except Exception as e:
+                pass
+            return
+
+        # 모바일 백그라운드 재생 방어용 무음 오디오 엔드포인트: /api/silent-stream (60초 표준 버퍼)
         if parsed.path == '/api/silent-stream':
-            sample_rate = 44100
-            total_samples = sample_rate // 2  # 0.5초 무음 버퍼
+            sample_rate = 8000
+            duration_sec = 60  # 모바일 안드로이드/크롬 미디어세션 최소 요구치(5초)를 대폭 상회하는 60초 버퍼
+            total_samples = sample_rate * duration_sec
             data_size = total_samples * 2
             wav_data = bytearray(b'RIFF')
             wav_data.extend((36 + data_size).to_bytes(4, 'little'))
@@ -176,6 +479,7 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'audio/wav')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('Accept-Ranges', 'bytes')
             self.send_header('Content-Length', str(len(wav_data)))
             self.end_headers()
             try:
@@ -759,29 +1063,43 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
                             t_dur = 200
 
                 if vid and vid not in seen_ids and t_title:
+                    # 1) 재생시간 필터: 노래는 1분 ~ 10분 (40분짜리 게임 스트리밍/마인크래프트 등 원천 차단)
+                    if t_dur > 0 and (t_dur < 60 or t_dur > 600):
+                        continue
+
+                    # 2) 비음악(게임/마인크래프트/토크/썰/쇼츠 등) 엄격 차단
+                    if self.is_non_music(t_title, t_artist or ''):
+                        continue
+
+                    # 3) 컴필레이션/노래모음/플레이리스트 키워드 차단
                     low_title = t_title.lower()
-                    if not any(bk in low_title for bk in bad_keywords):
-                        seen_ids.add(vid)
-                        tracks.append({
-                            'id': f"yt-{vid}",
-                            'videoId': vid,
-                            'title': t_title,
-                            'artist': t_artist or artist or 'YouTube Music',
-                            'cover': f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-                            'duration': t_dur or 210,
-                            'genre': 'kpop' if any('\uac00' <= ch <= '\ud7a3' for ch in (t_title + (t_artist or ''))) else 'pop',
-                            'mood': 'energy'
-                        })
+                    if any(bk in low_title for bk in bad_keywords):
+                        continue
+
+                    seen_ids.add(vid)
+                    actual_artist = t_artist or 'YouTube Music'
+                    tracks.append({
+                        'id': f"yt-{vid}",
+                        'videoId': vid,
+                        'title': t_title,
+                        'artist': actual_artist,
+                        'cover': f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                        'duration': t_dur or 210,
+                        'genre': 'kpop' if any('\uac00' <= ch <= '\ud7a3' for ch in (t_title + actual_artist)) else 'pop',
+                        'mood': 'energy'
+                    })
         except Exception as e:
             print(f"fetch_youtube_related error for {video_id}: {e}", file=sys.stderr)
 
         # 2. 결과가 5곡 미만이면 아티스트/곡 기반 검색으로 보충
         if len(tracks) < 6:
-            search_query = f"{artist} 노래" if artist and len(artist) >= 2 else (f"{title} 노래" if title else "")
+            search_query = f"{artist} official" if artist and len(artist) >= 2 else (f"{title} official audio" if title else "")
             if search_query:
                 try:
                     s_res = self.search_youtube(search_query)
                     for st in s_res.get('songs', []) + s_res.get('tracks', []):
+                        if not st or self.is_non_music(st.get('title', ''), st.get('artist', '')):
+                            continue
                         svid = st.get('videoId') or st.get('id', '').replace('yt-', '')
                         if svid and svid not in seen_ids:
                             seen_ids.add(svid)

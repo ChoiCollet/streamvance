@@ -31,36 +31,14 @@
   <!-- Google Identity Services (GIS) for Google Login -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <!-- Page Visibility API Spoofing & Mobile Background Guard -->
-  <script>
-    (function() {
-      try {
-        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-        Object.defineProperty(document, 'webkitHidden', { get: () => false, configurable: true });
-        Object.defineProperty(document, 'webkitVisibilityState', { get: () => 'visible', configurable: true });
-      } catch (e) {}
-    })();
-  </script>
 
   <!-- Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 100% 보장) -->
-  <div id="yt-player-persistent-wrap" class="yt-player-persistent-wrap">
-    <div id="youtube-player-hidden"></div>
-    <!-- 동영상 화면 제어 툴바: PIP(화면 속 화면), 전체화면 버튼 (유튜브 영상 위에 상시 안전 노출) -->
-    <div class="video-corner-actions" id="video-corner-actions">
-      <button class="art-corner-btn btn-video-pip" id="btn-video-pip-toggle" title="화면 속 화면 (PIP 미니 플레이어)">
-        <i data-lucide="picture-in-picture-2"></i>
-      </button>
-      <button class="art-corner-btn btn-video-fs" id="btn-video-fullscreen-toggle" title="전체화면 (F)">
-        <i data-lucide="maximize" class="icon-fs-max"></i>
-        <i data-lucide="minimize" class="icon-fs-min" style="display: none;"></i>
-      </button>
-    </div>
-  </div>
+
+  <!-- 삼성인터넷 동영상 어시스턴트 & 백그라운드 재생 연동용 네이티브 비디오 앵커 -->
+  <video id="streamvance-native-video-anchor" playsinline muted autoplay style="position: fixed; bottom: 84px; right: 12px; width: 16px; height: 16px; opacity: 0.005; pointer-events: none; z-index: 8;"></video>
 
   <div id="app" class="app-container">
     
@@ -747,11 +725,16 @@
     <!-- 가사 & 재생 대기열 전체화면 모달 (YouTube Music PC/Mobile Now Playing) -->
     <div class="full-player-modal" id="full-player-modal">
       <div class="modal-header">
-        <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기 (뒤로가기)" aria-label="플레이어 접기">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
+        <div class="modal-header-left-actions">
+          <button class="icon-btn-modal" id="btn-close-full-player" title="플레이어 접기 (뒤로가기)" aria-label="플레이어 접기">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <button class="icon-btn-modal btn-header-sleep-mode" id="btn-header-sleep-mode" title="화면 끄기 (OLED 절전 슬립 모드)" aria-label="절전 모드">
+            <i data-lucide="moon"></i>
+          </button>
+        </div>
 
         <!-- 노래 | 동영상 전환 토글 버튼 (상단 헤더 정중앙 배치 - Screenshot 1 100% 일치) -->
         <div class="ytm-media-toggle-pill" id="media-mode-toggle">
@@ -827,7 +810,7 @@
             </button>
           </div>
 
-          <!-- YouTube Music 피쳐 액션 바 (좋아요 수, 싫어요, 댓글 수, 저장 - 스크린샷 100% 매칭) -->
+          <!-- YouTube Music 피쳐 액션 바 (좋아요 수, 싫어요, 댓글 수, 저장, 절전 모드) -->
           <div class="ytm-action-pills-bar" id="ytm-action-pills-bar">
             <button class="ytm-action-pill" id="btn-pill-like" title="좋아요">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pill-like-svg"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
@@ -840,6 +823,7 @@
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
               <span class="pill-comment-text" id="pill-comment-count">댓글</span>
             </button>
+
             <button class="ytm-action-pill" id="btn-pill-save" title="보관함에 저장">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               <span>저장</span>
@@ -1237,9 +1221,13 @@
             <i data-lucide="subtitles"></i>
             <span>자막</span>
           </button>
+          <button class="sheet-action-item" id="sheet-act-pocket-mode">
+            <i data-lucide="moon"></i>
+            <span>포켓 절전 모드 (화면 소등 백그라운드)</span>
+          </button>
           <button class="sheet-action-item" id="sheet-act-bg-guide">
             <i data-lucide="smartphone"></i>
-            <span>삼성인터넷 백그라운드 안내</span>
+            <span>모바일 백그라운드 재생 가이드</span>
           </button>
         </div>
       </div>
@@ -1462,19 +1450,41 @@
   <!-- OLED 화면 끄기 / 절전 슬립 모드 오버레이 (순수 블랙 #000000으로 화면 전력 0 소모 + 재생 지속) -->
   <div id="oled-sleep-overlay" class="oled-sleep-overlay" style="display: none;">
     <div class="oled-sleep-content">
-      <div style="font-size: 2.2rem; margin-bottom: 12px; color: #aaa;">
-        <i data-lucide="moon" style="width: 36px; height: 36px;"></i>
+      <div class="oled-sleep-clock" id="oled-sleep-clock">00:00</div>
+      <div class="oled-sleep-info">
+        <div class="oled-sleep-title" id="oled-sleep-track-name">재생 중인 곡 없음</div>
+        <div class="oled-sleep-sub" id="oled-sleep-artist-name">Streamvance Music</div>
       </div>
-      <div class="oled-sleep-title">화면 끄기 절전 모드</div>
-      <div class="oled-sleep-sub" id="oled-sleep-track-name">Streamvance Music</div>
-      <div class="oled-sleep-hint">화면을 두 번 탭(더블 클릭)하면 해제됩니다</div>
+      <div class="oled-sleep-hint">
+        <i data-lucide="lock" style="width: 15px; height: 15px;"></i>
+        <span>화면을 두 번 탭하거나 잠금 해제 버튼을 누르세요</span>
+      </div>
+      <button class="oled-unlock-btn" id="btn-oled-unlock">
+        <i data-lucide="unlock" style="width: 16px; height: 16px;"></i>
+        <span>화면 켜기</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 상시 뷰포트 상주 유튜브 플레이어 마운트 (모바일 삼성인터넷/크롬 백그라운드 재생 100% 보장 및 영상 모드 최상위 노출) -->
+  <div id="yt-player-persistent-wrap" class="yt-player-persistent-wrap">
+    <div id="youtube-player-hidden"></div>
+    <!-- 동영상 화면 제어 툴바: PIP(화면 속 화면), 전체화면 버튼 (유튜브 영상 위에 상시 안전 노출) -->
+    <div class="video-corner-actions" id="video-corner-actions">
+      <button class="art-corner-btn btn-video-pip" id="btn-video-pip-toggle" title="화면 속 화면 (PIP 미니 플레이어)">
+        <i data-lucide="picture-in-picture-2"></i>
+      </button>
+      <button class="art-corner-btn btn-video-fs" id="btn-video-fullscreen-toggle" title="전체화면 (F)">
+        <i data-lucide="maximize" class="icon-fs-max"></i>
+        <i data-lucide="minimize" class="icon-fs-min" style="display: none;"></i>
+      </button>
     </div>
   </div>
 
   <!-- Audio Elements & Native Mobile PiP Video Bridge -->
   <audio id="main-audio" preload="metadata"></audio>
   <audio id="streamvance-bg-audio-anchor" preload="auto" loop playsinline style="display: none;"></audio>
-  <video id="native-pip-video" playsinline autoplay style="position: fixed; bottom: 0; right: 0; width: 10px; height: 10px; opacity: 0.01; pointer-events: none; z-index: -999;"></video>
+  <video id="native-pip-video" playsinline autoplay style="position: fixed; bottom: 84px; right: 12px; width: 16px; height: 16px; opacity: 0.005; pointer-events: none; z-index: 9;"></video>
   <canvas id="native-pip-canvas" width="480" height="480" style="display: none;"></canvas>
 
   <!-- YouTube IFrame API -->
@@ -1482,5 +1492,16 @@
 
   <!-- Scripts -->
   <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          console.log('[ServiceWorker] Registered successfully with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('[ServiceWorker] Registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

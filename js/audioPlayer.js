@@ -1,5 +1,7 @@
 // ==========================================================================
-// Hybrid Audio Engine: Real YouTube IFrame API + HTML5 Audio (Local Files)
+// Hybrid Audio Engine: HTML5 Native Audio (Background-safe) + YouTube IFrame
+// Mobile: yt-dlp 서버 프록시 → HTML5 <audio> (백그라운드 재생 100% 지원)
+// Desktop: YouTube IFrame API (비디오 모드) + HTML5 audio 폴백
 // ==========================================================================
 
 export class AudioPlayer {
@@ -17,6 +19,16 @@ export class AudioPlayer {
     this.isMuted = false;
     this.syncInterval = null;
     this.loadRetryTimer = null;
+
+    // 모바일 백그라운드 재생 핵심: 현재 트랙이 네이티브 오디오(HTML5 <audio>)로 재생 중인지 추적
+    this.useNativeAudio = false;  // true = HTML5 <audio> 사용 중, false = YouTube IFrame 사용 중
+    this.preferNativeAudio = true; // 백그라운드 재생 최우선: HTML5 <audio> 우선 사용, 실패 시 IFrame 폴백
+    this._audioUrlFetching = null; // 현재 진행 중인 오디오 URL 추출 요청 AbortController
+    this._isLoadingNativeAudio = false; // 네이티브 오디오 로딩/프라이밍 진행 중 플래그
+    this._loadSessionId = 0; // 비동기 응답 경합(Race Condition) 방지용 세션 카운터
+
+    // 모바일 브라우저 감지 (Android/iOS/삼성인터넷)
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|SamsungBrowser/i.test(navigator.userAgent);
 
     // Callbacks
     this.callbacks = {
@@ -64,10 +76,30 @@ export class AudioPlayer {
             },
             onStateChange: (event) => {
               // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0, BUFFERING = 3
+              // [핵심] 현재 네이티브 오디오 모드(HTML5 <audio>)로 재생 중이라면,
+              // 백그라운드 YouTube iframe의 모든 이벤트는 무시하고 즉시 정지 유지
+              if (this.useNativeAudio) {
+                if (event.data === 1) {
+                  try { this.ytPlayer.pauseVideo(); } catch (e) {}
+                }
+                return;
+              }
+
               if (event.data === 1) {
                 this.isPlaying = true;
                 this.isUserPaused = false;
                 this.ensureAudioSound();
+
+                // 목표 동기화 시간 검증 및 보정 (처음 0:00으로 튀는 현상 방어)
+                if (this._targetSyncTime !== undefined && this._targetSyncTime > 1) {
+                  const target = this._targetSyncTime;
+                  this._targetSyncTime = undefined;
+                  const current = (typeof this.ytPlayer.getCurrentTime === 'function') ? this.ytPlayer.getCurrentTime() : 0;
+                  if (current < target - 1.5 || current > target + 2.5) {
+                    try { this.ytPlayer.seekTo(target, true); } catch (e) {}
+                  }
+                }
+
                 this.startProgressSync();
                 this.startBgKeepAlive();
                 this.syncMediaSessionPlaybackState();
@@ -86,22 +118,27 @@ export class AudioPlayer {
                   this.startBgKeepAlive();
                   this.forceResumePlayback();
 
-                  // 화면 꺼짐 직후 브라우저 비디오 스로틀링으로 일시정지 상태가 유지된 경우,
-                  // 잠금화면 및 알림창에 [ ▶ 재생 ] 버튼이 정확히 노출되도록 동기화 (원터치 즉각 재개 보장)
+                  // 화면 꺼짐 직후 브라우저 비디오 스로틀링으로 일시정지 상태가 된 경우,
+                  // 잠금화면 및 알림창에 [ ▶ 재생 ] 버튼이 즉시 노출되도록 동기화 (원터치 즉각 재개 보장)
                   setTimeout(() => {
                     if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
                       const curState = this.ytPlayer.getPlayerState();
-                      if (curState === 2 && !this.isUserPaused) {
+                      if (curState === 2 && !this.isUserPaused && !this.useNativeAudio) {
+                        const curTrack = this.getCurrentTrack();
+                        if (curTrack) {
+                          this.updateMediaSession(curTrack);
+                        }
                         if ('mediaSession' in navigator) {
                           navigator.mediaSession.playbackState = 'paused';
                         }
                         if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(false);
                       }
                     }
-                  }, 350);
+                  }, 200);
                 }
               } else if (event.data === 0) {
-                // 재생 완료 시
+                // 재생 완료 시 (네이티브 오디오 모드에서는 무시)
+                if (this.useNativeAudio) return;
                 if (this.repeatMode === 'one') {
                   this.ytPlayer.seekTo(0, true);
                   this.ytPlayer.playVideo();
@@ -112,8 +149,60 @@ export class AudioPlayer {
             },
             onError: (err) => {
               console.warn("YouTube Playback Error:", err);
-              // 재생 오류 시 다음 곡으로 안전하게 이동
-              setTimeout(() => this.nextTrack(true), 1200);
+              // 네이티브 오디오 모드에서는 YouTube IFrame 오류로 인한 곡 넘김을 절대 실행하지 않음
+              if (this.useNativeAudio) return;
+
+              const errorCode = err?.data !== undefined ? err.data : err;
+              // 101, 150: 퍼가기 제한 영상 (외부 사이트 임베드 차단 - "시청할 수 없는 동영상입니다")
+              // 100, 105: 영상 오류/삭제/비공개
+              if (errorCode === 101 || errorCode === 150 || errorCode === 100 || errorCode === 105) {
+                console.log("[AudioPlayer] Embed restricted video detected (code " + errorCode + "). Searching for official MV alternative...");
+                const curTrack = this.getCurrentTrack();
+                const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
+
+                if (curTrack && !curTrack._mvSearched) {
+                  curTrack._mvSearched = true;
+                  const query = `${curTrack.artist || ''} ${curTrack.title || ''} MV`.trim();
+                  fetch(`/api/search?q=${encodeURIComponent(query)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                      const list = [...(data.songs || []), ...(data.tracks || []), ...(data.videos || [])];
+                      const candidate = list.find(v => v.videoId && v.videoId !== curTrack.videoId);
+                      if (candidate && candidate.videoId) {
+                        console.log("[AudioPlayer] Switching to alternative MV videoId:", candidate.videoId);
+                        curTrack.mvVideoId = candidate.videoId;
+                        if (typeof window !== 'undefined' && window.ui?.showToast) {
+                          window.ui.showToast('공식 뮤직비디오 영상으로 자동 연결했습니다.');
+                        }
+                        if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
+                          this.ytPlayer.loadVideoById(candidate.videoId, curTime);
+                          try {
+                            if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+                            if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+                            if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+                          } catch (pe) {}
+                          return;
+                        }
+                      }
+                      this._fallbackToAudioMode();
+                    })
+                    .catch(() => {
+                      this._fallbackToAudioMode();
+                    });
+                  return;
+                }
+
+                this._fallbackToAudioMode();
+                return;
+              }
+
+              if (!this.useNativeAudio && this.isPlaying) {
+                setTimeout(() => {
+                  if (!this.useNativeAudio && this.isPlaying) {
+                    this.nextTrack(true);
+                  }
+                }, 1500);
+              }
             }
           }
         });
@@ -184,6 +273,14 @@ export class AudioPlayer {
     });
 
     this.audio.addEventListener('ended', () => {
+      // 1. 프라이밍 무음 오디오이거나 로딩 중일 때는 절대 다음 곡 스킵 금지
+      if (this._isLoadingNativeAudio || !this.audio.src || this.audio.src.startsWith('data:') || this.audio.src.includes('silent')) {
+        return;
+      }
+      // 2. 오디오 길이가 비정상적으로 짧은 경우(3초 미만)에도 자동 스킵 방지
+      if (this.audio.duration && this.audio.duration < 3) {
+        return;
+      }
       if (this.repeatMode === 'one') {
         this.audio.currentTime = 0;
         this.audio.play();
@@ -191,20 +288,28 @@ export class AudioPlayer {
         this.nextTrack(false);
       }
     });
+
+    this.audio.addEventListener('error', () => {
+      if (this._isLoadingNativeAudio || (this.audio.src && this.audio.src.startsWith('data:'))) {
+        return;
+      }
+      console.warn('[HTML5 Audio] Playback error encountered');
+    });
   }
 
   // 1. 삼성인터넷 & 모바일 브라우저 무중단 백그라운드 재생 마스터 엔진
   initBgKeepAlive() {
     this.bgPulseWorker = null;
     this.bgKeepAliveAudio = null;
+    this.nativeVideoAnchor = null;
     this.webAudioCtx = null;
 
-    // A. 16-bit 44.1kHz 무음 WAV 오디오 캐리어 생성 (네트워크 의존성 0%, 100% 로컬 무한 루프)
+    // A. 60초 유효 PCM WAV 오디오 캐리어 생성 (안드로이드 크롬 5초 이상 세션 유지 기준 완벽 충족)
     // 모바일 OS(안드로이드/iOS)가 오디오 하드웨어 세션을 닫지 않도록 Audio Focus 상시 유지
     try {
       const createSilentWav = () => {
-        const sampleRate = 44100;
-        const numSamples = sampleRate; // 1초
+        const sampleRate = 8000;
+        const numSamples = sampleRate * 60; // 60초 지속 버퍼 (Android 5초 이상 Audio Focus 룰 통과)
         const buffer = new ArrayBuffer(44 + numSamples * 2);
         const view = new DataView(buffer);
         view.setUint32(0, 0x52494646, false); // "RIFF"
@@ -234,27 +339,73 @@ export class AudioPlayer {
       }
       el.src = silentUrl;
       el.loop = true;
-      el.volume = 0.001; // 초미세 볼륨으로 OS 오디오 하드웨어 믹서 상시 홀드
+      el.volume = 0.02; // Android OS가 음소거(Muted)로 간주하여 오디오 포커스를 해제하지 않도록 안전 레벨 유지
       el.playsInline = true;
       this.bgKeepAliveAudio = el;
     } catch (e) {
       console.warn("Silent audio carrier init error:", e);
     }
 
-    // B. Web Audio API 기반 하드웨어 오디오 클록 락 (안드로이드 ALSA 파이프라인 동결 방어)
+    // B. Web Audio API 기반 하드웨어 오디오 클록 락 & 무한 라이브 미디어스트림 생성
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         this.webAudioCtx = new AudioCtx();
         const osc = this.webAudioCtx.createOscillator();
+        osc.frequency.value = 20; // 20Hz (인간 가청 주파수 최하한선 초저음 = 완벽한 무음 청취)
         const gain = this.webAudioCtx.createGain();
-        gain.gain.value = 0.00001;
+        gain.gain.value = 0.005;
         osc.connect(gain);
-        gain.connect(this.webAudioCtx.destination);
-        osc.start();
+        
+        // MediaStreamDestination 기반 무한 라이브 오디오 트랙 생성
+        if (typeof this.webAudioCtx.createMediaStreamDestination === 'function' && this.bgKeepAliveAudio) {
+          try {
+            const dst = this.webAudioCtx.createMediaStreamDestination();
+            gain.connect(dst);
+            osc.start();
+            if ('srcObject' in this.bgKeepAliveAudio) {
+              this.bgKeepAliveAudio.srcObject = dst.stream;
+            }
+          } catch (e) {
+            gain.connect(this.webAudioCtx.destination);
+            osc.start();
+          }
+        } else {
+          gain.connect(this.webAudioCtx.destination);
+          osc.start();
+        }
       }
     } catch (e) {
       console.warn("Web Audio keepalive init error:", e);
+    }
+
+    // C. 삼성인터넷 동영상 어시스턴트 & 백그라운드 재생 트리거용 네이티브 비디오 앵커 연동
+    try {
+      let vAnchor = document.getElementById('streamvance-native-video-anchor');
+      if (!vAnchor) {
+        vAnchor = document.createElement('video');
+        vAnchor.id = 'streamvance-native-video-anchor';
+        vAnchor.playsInline = true;
+        vAnchor.muted = true;
+        vAnchor.style.cssText = 'position:fixed;bottom:84px;right:12px;width:16px;height:16px;opacity:0.005;pointer-events:none;z-index:8;';
+        document.body.appendChild(vAnchor);
+      }
+      this.nativeVideoAnchor = vAnchor;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 16;
+      canvas.height = 16;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, 16, 16);
+      }
+      if (canvas.captureStream && 'srcObject' in vAnchor) {
+        const cStream = canvas.captureStream(1);
+        vAnchor.srcObject = cStream;
+      }
+    } catch (e) {
+      console.warn("Native video anchor init error:", e);
     }
 
     // C. Web Worker 기반 무동결 하트비트 루프
@@ -330,7 +481,8 @@ export class AudioPlayer {
           this.audio.play().catch(() => {});
         }
       }
-      if (this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+      // [핵심] 네이티브 오디오 모드일 때는 YouTube iframe playVideo()를 절대 실행하지 않음 (중복 재생 및 곡 스킵 원천 차단)
+      if (!this.useNativeAudio && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
         if (this.isPlaying && !this.isUserPaused) {
           try {
             const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
@@ -383,11 +535,19 @@ export class AudioPlayer {
 
   // 백그라운드 상태에서 유튜브 플레이어 상태 지속 감시 및 재생 유지
   keepPlaybackAlive() {
-    if (!this.isPlaying || this.isUserPaused) return;
+    if (!this.isPlaying || this.isUserPaused || this._isSwitchingMediaMode) return;
 
     this.ensureSilentAnchorRunning();
     if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused) {
       this.bgKeepAliveAudio.play().catch(() => {});
+    }
+
+    // [핵심] 네이티브 오디오 모드에서는 YouTube IFrame을 건드리지 않고 HTML5 audio만 유지
+    if (this.useNativeAudio) {
+      if (this.audio && this.audio.paused && !this._isLoadingNativeAudio) {
+        try { this.audio.play(); } catch (e) {}
+      }
+      return;
     }
 
     if (this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function') {
@@ -404,17 +564,25 @@ export class AudioPlayer {
 
   // 화면 꺼짐 직후 비자발적 정지 발생 시 안전한 지능형 재개
   forceResumePlayback() {
-    if (this.isUserPaused || !this.isPlaying) return;
-    if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
+    if (this.isUserPaused || !this.isPlaying || this._isSwitchingMediaMode) return;
 
     this.ensureSilentAnchorRunning();
     if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused) {
       this.bgKeepAliveAudio.play().catch(() => {});
     }
 
+    if (this.useNativeAudio) {
+      if (this.audio && this.audio.paused && !this._isLoadingNativeAudio) {
+        try { this.audio.play(); } catch (e) {}
+      }
+      return;
+    }
+
+    if (!this.ytPlayer || typeof this.ytPlayer.playVideo !== 'function') return;
+
     try {
       const state = typeof this.ytPlayer.getPlayerState === 'function' ? this.ytPlayer.getPlayerState() : -1;
-      if (state !== 1) {
+      if (state !== 1 && state !== 3) {
         this.ytPlayer.playVideo();
         this.ensureAudioSound();
       }
@@ -422,7 +590,7 @@ export class AudioPlayer {
 
     [100, 300, 700].forEach(delay => {
       setTimeout(() => {
-        if (!this.isUserPaused && this.isPlaying && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+        if (!this.isUserPaused && this.isPlaying && !this.useNativeAudio && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
           const s = this.ytPlayer.getPlayerState();
           if (s !== 1 && s !== 3) {
             try {
@@ -443,6 +611,9 @@ export class AudioPlayer {
     if (this.bgKeepAliveAudio && this.bgKeepAliveAudio.paused && this.isPlaying && !this.isUserPaused) {
       this.bgKeepAliveAudio.play().catch(() => {});
     }
+    if (this.nativeVideoAnchor && this.nativeVideoAnchor.paused && this.isPlaying && !this.isUserPaused) {
+      this.nativeVideoAnchor.play().catch(() => {});
+    }
     if (this.bgPulseWorker) {
       try { this.bgPulseWorker.postMessage('start'); } catch (e) {}
     }
@@ -451,6 +622,9 @@ export class AudioPlayer {
   stopBgKeepAlive() {
     if (this.bgKeepAliveAudio && !this.bgKeepAliveAudio.paused) {
       this.bgKeepAliveAudio.pause();
+    }
+    if (this.nativeVideoAnchor && !this.nativeVideoAnchor.paused) {
+      this.nativeVideoAnchor.pause();
     }
     if (!this.isCurrentLocal() && this.audio) {
       this.audio.pause();
@@ -546,6 +720,8 @@ export class AudioPlayer {
 
   isCurrentLocal() {
     const track = this.getCurrentTrack();
+    // 네이티브 오디오 모드(서버 프록시 스트리밍)이거나 로컬 파일인 경우
+    if (this.useNativeAudio) return true;
     return track && !track.videoId && track.audioUrl;
   }
 
@@ -632,6 +808,12 @@ export class AudioPlayer {
   loadTrack(track, autoPlay = true) {
     if (!track) return;
 
+    // 진행 중인 오디오 URL 추출 요청 취소
+    if (this._audioUrlFetching) {
+      try { this._audioUrlFetching.abort(); } catch (e) {}
+      this._audioUrlFetching = null;
+    }
+
     // videoId 정규화 (yt- 접두어 제거 및 기본값 보장)
     if (!track.videoId && track.id) {
       if (typeof window !== 'undefined' && Array.isArray(window.allTracks)) {
@@ -650,44 +832,47 @@ export class AudioPlayer {
 
     // 양쪽 정지 후 로드
     this.audio.pause();
+    // [핵심] 네이티브 오디오를 우선 사용할 경우, 로딩 초기부터 useNativeAudio=true로 두어
+    // 터치 언락이나 백그라운드 워커 펄스로 인한 YouTube iframe 개입을 원천 방어!
+    if (this.preferNativeAudio || track.audioUrl) {
+      this.useNativeAudio = true;
+      if (this.ytPlayer) {
+        try {
+          if (typeof this.ytPlayer.stopVideo === 'function') this.ytPlayer.stopVideo();
+          else if (typeof this.ytPlayer.pauseVideo === 'function') this.ytPlayer.pauseVideo();
+        } catch (e) {}
+      }
+    } else {
+      this.useNativeAudio = false;
+    }
 
     if (autoPlay) {
       this.isPlaying = true;
       this.isUserPaused = false;
-      // 사용자 직접 터치 제스처 스레드에서 즉시 하드웨어 오디오 클록 & 백그라운드 워커 동기 언락
       this.startBgKeepAlive();
       this.ensureAudioSound();
     }
 
+    this._loadSessionId = (this._loadSessionId || 0) + 1;
+    const currentSessionId = this._loadSessionId;
+
     if (track.videoId) {
-      // 실제 YouTube 음악 스트리밍
-      if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
-        if (autoPlay) {
-          this.ytPlayer.loadVideoById(track.videoId);
-          this.ensureAudioSound();
-        } else {
-          this.ytPlayer.cueVideoById(track.videoId);
-        }
+      // =====================================================================
+      // 백그라운드 재생 핵심: HTML5 Native Audio 모드 최우선 시도
+      // (모바일 크롬, 삼성인터넷, 데스크톱 백그라운드 탭 100% 무중단 지원)
+      // =====================================================================
+      if (this.preferNativeAudio) {
+        this._loadNativeAudio(track, autoPlay, currentSessionId);
       } else {
-        // 아직 YT가 준비되지 않았을 경우 대기 후 재시도
-        this.loadRetryTimer = setInterval(() => {
-          if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
-            clearInterval(this.loadRetryTimer);
-            this.loadRetryTimer = null;
-            if (autoPlay) {
-              this.ytPlayer.loadVideoById(track.videoId);
-              this.ensureAudioSound();
-            } else {
-              this.ytPlayer.cueVideoById(track.videoId);
-            }
-          }
-        }, 150);
+        this._loadYouTubeIFrame(track, autoPlay);
       }
     } else if (track.audioUrl) {
       // 로컬 파일 재생
       if (this.ytPlayer && this.ytPlayer.stopVideo) {
         this.ytPlayer.stopVideo();
       }
+      this.useNativeAudio = true;
+      this.audio.loop = false;
       this.audio.src = track.audioUrl;
       this.audio.currentTime = 0;
       if (autoPlay) {
@@ -703,6 +888,195 @@ export class AudioPlayer {
     }
   }
 
+  // 서버 프록시를 통한 네이티브 HTML5 오디오 고속 로드 (대기 시간 0초 단축)
+  async _loadNativeAudio(track, autoPlay, sessionId) {
+    const videoId = track.videoId;
+    if (!videoId) return;
+
+    // YouTube IFrame 정지
+    if (this.ytPlayer && this.ytPlayer.stopVideo) {
+      try { this.ytPlayer.stopVideo(); } catch (e) {}
+    }
+
+    if (this._audioUrlFetching) {
+      try { this._audioUrlFetching.abort(); } catch (e) {}
+      this._audioUrlFetching = null;
+    }
+
+    this._isLoadingNativeAudio = true;
+    this.useNativeAudio = true;
+
+    // [고속 전환] /api/audio-url 사전 질의 대기 없이 곧바로 프록시 스트림 URL 설정
+    // Range 헤더와 실시간 파이프라인으로 첫 번째 청크가 도착하는 즉시 재생 시작
+    const streamProxyUrl = `/api/audio-stream?id=${encodeURIComponent(videoId)}`;
+    this.audio.loop = false;
+    this.audio.src = streamProxyUrl;
+    this.audio.currentTime = 0;
+    this.audio.volume = this.isMuted ? 0 : this.volume;
+
+    if (autoPlay) {
+      this.isPlaying = true;
+      this.isUserPaused = false;
+      this.startBgKeepAlive();
+      this.syncMediaSessionPlaybackState();
+      if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
+
+      try {
+        await this.audio.play();
+        if (this._loadSessionId !== sessionId) return;
+        this._isLoadingNativeAudio = false;
+        console.log(`[BackgroundPlay] High-speed native audio stream playing: ${track.title}`);
+        this._prefetchNextTrackAudio();
+      } catch (playErr) {
+        if (this._loadSessionId !== sessionId) return;
+        console.warn('[BackgroundPlay] Direct stream play error, trying iframe fallback:', playErr);
+        this._isLoadingNativeAudio = false;
+        this.useNativeAudio = false;
+        this._loadYouTubeIFrame(track, autoPlay);
+      }
+    } else {
+      this._isLoadingNativeAudio = false;
+    }
+  }
+
+  // 다음/이전 곡 오디오 URL 및 대기열 선제적 다중 캐싱 (곡 변경 시 0ms 즉각 전환)
+  _prefetchNextTrackAudio() {
+    if (!this.queue || this.queue.length === 0 || this.currentIndex < 0) return;
+    const vids = [];
+    for (let i = 1; i <= 4; i++) {
+      const idx = this.currentIndex + i;
+      if (idx < this.queue.length && this.queue[idx]?.videoId) {
+        vids.push(this.queue[idx].videoId);
+      }
+    }
+    if (this.currentIndex > 0 && this.queue[this.currentIndex - 1]?.videoId) {
+      vids.push(this.queue[this.currentIndex - 1].videoId);
+    }
+    if (vids.length > 0) {
+      fetch(`/api/prefetch?id=${encodeURIComponent(vids.join(','))}`).catch(() => {});
+    }
+  }
+
+  // 음원 모드 폴백 헬퍼 (퍼가기 제한 영상 대응)
+  _fallbackToAudioMode() {
+    if (typeof window !== 'undefined' && window.ui && typeof window.ui.showToast === 'function') {
+      window.ui.showToast('해당 곡은 저작권 정책으로 영상 재생이 제한되어 고음질 음원으로 재생합니다.');
+    }
+    if (typeof window !== 'undefined' && typeof window.switchMediaMode === 'function') {
+      window.switchMediaMode('song');
+    } else {
+      this.switchToAudioMode();
+    }
+  }
+
+  // 동영상 모드로 전환 (YouTube IFrame 활성화 및 재생 시점 동기화)
+  switchToVideoMode() {
+    const track = this.getCurrentTrack();
+    if (!track || !track.videoId) return;
+
+    // 공식 MV 대체 ID가 발견된 경우 해당 MV로 우선 연결
+    const targetVid = track.mvVideoId || track.videoId;
+    const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
+    this.preferNativeAudio = false;
+    this.useNativeAudio = false;
+    this._targetSyncTime = curTime;
+    this._isSwitchingMediaMode = true;
+
+    // HTML5 네이티브 오디오 안전 정지
+    if (this.audio) {
+      try { this.audio.pause(); } catch (e) {}
+    }
+
+    if (this.ytPlayer && this.isYTReady && typeof this.ytPlayer.loadVideoById === 'function') {
+      try {
+        // YouTube IFrame API 표준 규격: loadVideoById(videoId, startSeconds)
+        this.ytPlayer.loadVideoById(targetVid, curTime);
+        this.ensureAudioSound();
+        try {
+          if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+          if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+          if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+        } catch (pe) {}
+      } catch (e) {
+        try {
+          this.ytPlayer.loadVideoById({
+            videoId: targetVid,
+            startSeconds: curTime
+          });
+          if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+        } catch (e2) {}
+      }
+    } else {
+      this._loadYouTubeIFrame(track, true);
+    }
+
+    this.isPlaying = true;
+    this.isUserPaused = false;
+    this.syncMediaSessionPlaybackState();
+    if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
+
+    setTimeout(() => {
+      this._isSwitchingMediaMode = false;
+    }, 1200);
+  }
+
+  // 오디오 모드로 복귀 (HTML5 Native Audio 활성화 및 재생 시점 동기화)
+  switchToAudioMode() {
+    const track = this.getCurrentTrack();
+    if (!track || !track.videoId) return;
+
+    const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
+    this.preferNativeAudio = true;
+    this.useNativeAudio = true;
+
+    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+      try { this.ytPlayer.pauseVideo(); } catch (e) {}
+    }
+
+    this._loadNativeAudio(track, true, this._loadSessionId).then(() => {
+      if (curTime > 0) {
+        this.seekTo(curTime);
+      }
+    }).catch(() => {});
+  }
+
+  // YouTube IFrame API를 통한 로드 (데스크톱 / 비디오 모드 / 폴백)
+  _loadYouTubeIFrame(track, autoPlay) {
+    this.useNativeAudio = false;
+    if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
+      if (autoPlay) {
+        this.ytPlayer.loadVideoById(track.videoId);
+        this.ensureAudioSound();
+        try {
+          if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+          if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+          if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+        } catch (pe) {}
+      } else {
+        this.ytPlayer.cueVideoById(track.videoId);
+      }
+    } else {
+      // 아직 YT가 준비되지 않았을 경우 대기 후 재시도
+      this.loadRetryTimer = setInterval(() => {
+        if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
+          clearInterval(this.loadRetryTimer);
+          this.loadRetryTimer = null;
+          if (autoPlay) {
+            this.ytPlayer.loadVideoById(track.videoId);
+            this.ensureAudioSound();
+            try {
+              if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+              if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+              if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+            } catch (pe) {}
+          } else {
+            this.ytPlayer.cueVideoById(track.videoId);
+          }
+        }
+      }, 150);
+    }
+  }
+
   play() {
     this.isUserPaused = false;
     const currentTrack = this.getCurrentTrack();
@@ -713,19 +1087,29 @@ export class AudioPlayer {
       return;
     }
 
-    if (currentTrack.videoId && this.ytPlayer) {
+    // 네이티브 오디오 모드 (HTML5 <audio> - 모바일 백그라운드 재생 지원)
+    if (this.useNativeAudio || !currentTrack.videoId) {
+      // 확실하게 유튜브 플레이어 정지 보장
+      if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+        try { this.ytPlayer.pauseVideo(); } catch (e) {}
+      }
       this.isPlaying = true;
-      try {
-        if (typeof this.ytPlayer.playVideo === 'function') {
-          this.ytPlayer.playVideo();
-        }
-      } catch (e) {}
-      this.ensureAudioSound();
+      this.audio.play().catch(e => console.warn('Audio play error:', e));
       this.startBgKeepAlive();
-    } else if (this.audio) {
-      this.isPlaying = true;
-      this.audio.play().catch(e => console.warn(e));
-      this.startBgKeepAlive();
+    } else {
+      if (this.audio) {
+        try { this.audio.pause(); } catch (e) {}
+      }
+      if (currentTrack.videoId && this.ytPlayer) {
+        this.isPlaying = true;
+        try {
+          if (typeof this.ytPlayer.playVideo === 'function') {
+            this.ytPlayer.playVideo();
+          }
+        } catch (e) {}
+        this.ensureAudioSound();
+        this.startBgKeepAlive();
+      }
     }
     this.syncMediaSessionPlaybackState();
     if (this.callbacks.onPlayStateChange) this.callbacks.onPlayStateChange(true);
@@ -734,11 +1118,20 @@ export class AudioPlayer {
   pause() {
     this.isUserPaused = true;
     this.isPlaying = false;
-    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
-      try { this.ytPlayer.pauseVideo(); } catch (e) {}
-    }
-    if (this.audio) {
-      this.audio.pause();
+
+    // 네이티브 오디오 모드에서는 HTML5 audio만 정지
+    if (this.useNativeAudio) {
+      if (this.audio) this.audio.pause();
+      if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+        try { this.ytPlayer.pauseVideo(); } catch (e) {}
+      }
+    } else {
+      if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+        try { this.ytPlayer.pauseVideo(); } catch (e) {}
+      }
+      if (this.audio) {
+        this.audio.pause();
+      }
     }
     this.stopBgKeepAlive();
     this.stopProgressSync();
@@ -755,11 +1148,22 @@ export class AudioPlayer {
       return;
     }
 
+    // 네이티브 오디오 모드
+    if (this.useNativeAudio) {
+      if (this.audio.paused) {
+        this.play();
+      } else {
+        this.pause();
+      }
+      return;
+    }
+
+    // YouTube IFrame 모드
     if (currentTrack.videoId && this.ytPlayer) {
       const state = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
-      if (state === 1) { // playing -> user pauses
+      if (state === 1) {
         this.pause();
-      } else { // paused -> user plays
+      } else {
         this.play();
       }
     } else {
@@ -843,7 +1247,11 @@ export class AudioPlayer {
 
   seekToPercent(percent) {
     const track = this.getCurrentTrack();
-    if (track?.videoId && this.ytPlayer && this.ytPlayer.getDuration) {
+    // 네이티브 오디오 모드 시크
+    if (this.useNativeAudio && this.audio.duration) {
+      const targetTime = (percent / 100) * this.audio.duration;
+      this.audio.currentTime = targetTime;
+    } else if (track?.videoId && this.ytPlayer && this.ytPlayer.getDuration) {
       const duration = this.ytPlayer.getDuration() || track.duration || 0;
       const targetTime = (percent / 100) * duration;
       this.ytPlayer.seekTo(targetTime, true);
@@ -855,7 +1263,7 @@ export class AudioPlayer {
 
   seekTo(seconds) {
     const target = Math.max(0, seconds);
-    if (this.isCurrentLocal()) {
+    if (this.useNativeAudio || this.isCurrentLocal()) {
       this.audio.currentTime = Math.min(this.audio.duration || target, target);
     } else if (this.ytPlayer && this.ytPlayer.seekTo) {
       this.ytPlayer.seekTo(target, true);
@@ -864,7 +1272,9 @@ export class AudioPlayer {
 
   seekRelative(seconds) {
     const track = this.getCurrentTrack();
-    if (track?.videoId && this.ytPlayer && this.ytPlayer.getCurrentTime) {
+    if (this.useNativeAudio && this.audio.duration) {
+      this.audio.currentTime = Math.max(0, Math.min(this.audio.duration, this.audio.currentTime + seconds));
+    } else if (track?.videoId && this.ytPlayer && this.ytPlayer.getCurrentTime) {
       const cur = this.ytPlayer.getCurrentTime() || 0;
       this.ytPlayer.seekTo(cur + seconds, true);
     } else if (this.audio.duration) {

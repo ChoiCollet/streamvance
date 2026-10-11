@@ -730,8 +730,7 @@ export class UIManager {
               </div>
               <span class="track-row-duration">${this.formatTime(track.duration)}</span>
               ${playedDateStr ? `
-                <span class="track-row-played-date" title="감상 날짜: ${playedDateStr}">
-                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span class="track-row-played-date" title="감상 일시: ${new Date(track.playedAt).toLocaleString()}">
                   ${playedDateStr}
                 </span>
               ` : ''}
@@ -761,23 +760,16 @@ export class UIManager {
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // 감상 일시 포맷 (예: 10월 10일, 오늘, 어제)
+  // 감상 일시 포맷 (사용자 요청: 파란 박스 구분 유지 및 26-10-11 초간결 표기)
   formatPlayedDate(timestamp) {
     if (!timestamp) return '';
     try {
       const d = new Date(timestamp);
       if (isNaN(d.getTime())) return '';
-      const now = new Date();
-      const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-      const yest = new Date(now);
-      yest.setDate(now.getDate() - 1);
-      const isYesterday = d.getFullYear() === yest.getFullYear() && d.getMonth() === yest.getMonth() && d.getDate() === yest.getDate();
-
-      const m = d.getMonth() + 1;
-      const day = d.getDate();
-      if (isToday) return `오늘 (${m}월 ${day}일)`;
-      if (isYesterday) return `어제 (${m}월 ${day}일)`;
-      return `${m}월 ${day}일`;
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
     } catch (e) {
       return '';
     }
