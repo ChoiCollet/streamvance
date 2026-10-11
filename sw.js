@@ -3,7 +3,7 @@
 // PWA 지원 및 모바일 브라우저 백그라운드 프로세스 우선순위 보장
 // ==========================================================================
 
-const CACHE_NAME = 'streamvance-cache-v10';
+const CACHE_NAME = 'streamvance-cache-v11';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -56,15 +56,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 로컬 개발 및 Wi-Fi 테스트 환경(localhost, 127.0.0.1, 192.168.* 등):
-  // 코드 수정 내용이 즉각 브라우저에 반영되도록 Network First 적용
-  const isLocalDev = url.hostname === 'localhost' || 
-                     url.hostname === '127.0.0.1' || 
-                     /^192\.168\./.test(url.hostname) ||
-                     /^10\./.test(url.hostname) ||
-                     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(url.hostname);
-
-  if (isLocalDev) {
+  // 로컬 개발 환경 또는 핵심 스크립트(.js/.html) 요청:
+  // 수정 내용이 모바일 브라우저에 지연 없이 즉각 반영되도록 Network First 적용
+  const isCoreScript = url.pathname.endsWith('.js') || url.pathname.endsWith('.html') || url.pathname === '/';
+  if (isLocalDev || isCoreScript) {
     event.respondWith(
       fetch(event.request).then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
