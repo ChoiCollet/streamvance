@@ -20,17 +20,10 @@ export class AudioPlayer {
     this.syncInterval = null;
     this.loadRetryTimer = null;
 
-    // 호스트 환경 감지: localhost/로컬 IP 환경 또는 설정된 스트리밍 서버가 있을 때 엔드포인트 활성화
-    const isLocalHost = typeof window !== 'undefined' && (
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      /^192\.168\./.test(window.location.hostname) ||
-      /^10\./.test(window.location.hostname) ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname) ||
-      window.location.port === '3000'
-    );
+    // 호스트 환경 감지: Python 로컬 서버(server.py) 및 Cloudflare Pages Edge Function(/api/audio-stream) 모두 지원
     this.streamServerBase = (typeof localStorage !== 'undefined' ? localStorage.getItem('streamvance_stream_server') : '') || '';
-    this.serverSupportsAudioStream = isLocalHost || !!this.streamServerBase;
+    // Cloudflare Pages Function 및 로컬 환경 모두에서 네이티브 백그라운드 오디오 스트림 활성화
+    this.serverSupportsAudioStream = true;
     this.preferNativeAudio = true; // 음원 모드에서는 상시 고품질 무중단 네이티브 오디오 우선!
     this.useNativeAudio = false;  // true = HTML5 <audio> 사용 중, false = YouTube IFrame 사용 중
     this.currentMediaMode = 'song'; // 'song' | 'video'
@@ -289,11 +282,20 @@ export class AudioPlayer {
       }
     });
 
-    this.audio.addEventListener('error', () => {
-      if (this._isLoadingNativeAudio || (this.audio.src && this.audio.src.startsWith('data:'))) {
+    this.audio.addEventListener('error', (e) => {
+      if (this._isLoadingNativeAudio || !this.audio.src || this.audio.src.startsWith('data:') || this.audio.src.includes('silent')) {
         return;
       }
-      console.warn('[HTML5 Audio] Playback error encountered');
+      console.warn('[HTML5 Audio] Playback error encountered:', e);
+      // 네이티브 오디오 로드 실패 시 음악이 멈추지 않도록 YouTube IFrame으로 자동 복구 폴백
+      if (this.useNativeAudio && this.isPlaying) {
+        const curTrack = this.getCurrentTrack();
+        if (curTrack && curTrack.videoId) {
+          console.warn('[HTML5 Audio] Auto-recovering via YouTube IFrame player');
+          this.useNativeAudio = false;
+          this._loadYouTubeIFrame(curTrack, true);
+        }
+      }
     });
   }
 

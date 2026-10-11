@@ -2602,9 +2602,9 @@ function initApp() {
     closeAccountDrawer();
     const currentServer = localStorage.getItem('streamvance_stream_server') || '';
     const newServer = prompt(
-      '💡 백그라운드 스트리밍 서버(PC IP 주소) 연동 설정:\n\n' +
-      'Cloudflare Pages(외부 호스팅) 사용 시 PC의 Streamvance 서버 IP를 입력하시면 모바일 화면 꺼짐 시에도 100% 무중단 네이티브 백그라운드 재생이 가능합니다.\n\n' +
-      '(예: http://192.168.0.122:3000 / 비워두면 자동 감지)',
+      '💡 백그라운드 스트리밍 서버 연동 설정:\n\n' +
+      'Cloudflare Pages Edge Function 및 로컬 서버에서 모바일 백그라운드 재생이 기본 지원됩니다.\n별도의 개인 프라이빗 스트리밍 서버(PC IP 주소)를 지정하고 싶으실 경우에만 입력하세요.\n\n' +
+      '(예: http://192.168.0.12:3000 / 비워두면 자동 감지)',
       currentServer
     );
     if (newServer !== null) {
@@ -2617,13 +2617,7 @@ function initApp() {
       } else {
         localStorage.removeItem('streamvance_stream_server');
         player.streamServerBase = '';
-        const isLocal = typeof window !== 'undefined' && (
-          window.location.hostname === 'localhost' ||
-          window.location.hostname === '127.0.0.1' ||
-          /^192\.168\./.test(window.location.hostname) ||
-          window.location.port === '3000'
-        );
-        player.serverSupportsAudioStream = isLocal;
+        player.serverSupportsAudioStream = true;
         ui.showToast('스트리밍 서버 설정이 기본값(자동 감지)으로 초기화되었습니다.');
       }
     }
