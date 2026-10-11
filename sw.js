@@ -3,7 +3,7 @@
 // PWA 지원 및 모바일 브라우저 백그라운드 프로세스 우선순위 보장
 // ==========================================================================
 
-const CACHE_NAME = 'streamvance-cache-v6';
+const CACHE_NAME = 'streamvance-cache-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -47,12 +47,33 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. 네트워크 요청 핸들러: API/오디오 스트림은 바이패스, 정적 자원은 캐시 우선
+// 3. 네트워크 요청 핸들러: API/오디오 스트림은 바이패스, 정적 자원은 로컬 Network-First / 프로덕션 SWR
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // 실시간 스트리밍, 오디오 프록시, 검색 등 API 요청은 캐시하지 않고 직접 네트워크로 전송
   if (url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
+    return;
+  }
+
+  // 로컬 개발 및 Wi-Fi 테스트 환경(localhost, 127.0.0.1, 192.168.* 등):
+  // 코드 수정 내용이 즉각 브라우저에 반영되도록 Network First 적용
+  const isLocalDev = url.hostname === 'localhost' || 
+                     url.hostname === '127.0.0.1' || 
+                     /^192\.168\./.test(url.hostname) ||
+                     /^10\./.test(url.hostname) ||
+                     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(url.hostname);
+
+  if (isLocalDev) {
+    event.respondWith(
+      fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const resClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
+        }
+        return networkResponse;
+      }).catch(() => caches.match(event.request))
+    );
     return;
   }
 

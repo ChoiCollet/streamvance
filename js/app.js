@@ -21,6 +21,7 @@ function initApp() {
   const auth = new AuthManager(ui, player);
   const lyricsService = new LyricsService();
   const searchService = new YouTubeSearchService();
+  window.searchService = searchService;
   const colorExtractor = new ColorExtractor();
   const pipManager = new PiPManager(player, ui, lyricsService);
   window.pipManager = pipManager;
@@ -341,9 +342,10 @@ function initApp() {
     return list.slice(0, 16);
   }
 
-  // 실시간 음원 스트림 백그라운드 사전 캐싱 헬퍼 (곡 선택 시 0ms 즉각 재생)
+  // 실시간 음원 스트림 백그라운드 사전 캐싱 헬퍼 (로컬 서버 환경에서만 안전 작동)
   const _prefetchedVids = new Set();
   function prefetchTracks(tracks) {
+    if (!player || !player.serverSupportsAudioStream) return;
     if (!tracks || !tracks.length) return;
     const vids = [];
     for (const t of tracks) {
@@ -359,23 +361,6 @@ function initApp() {
     }
   }
   window.prefetchTracks = prefetchTracks;
-
-  // 사용자 터치/마우스 오버 즉각 선제적 프리페치 (클릭 도착 전 이미 서버 캐시 완료 -> 0ms 체감)
-  const triggerPrefetchForElement = (target) => {
-    const card = target?.closest?.('[data-track-id]');
-    if (!card) return;
-    const trackId = card.getAttribute('data-track-id');
-    if (!trackId) return;
-    const t = (window.allTracks || []).find(x => x.id === trackId) || (ui?.playHistory || []).find(x => x.id === trackId);
-    const vid = t?.videoId || (trackId.startsWith('yt-') ? trackId.replace('yt-', '') : (trackId.length === 11 ? trackId : ''));
-    if (vid && vid.length === 11 && !_prefetchedVids.has(vid)) {
-      _prefetchedVids.add(vid);
-      fetch(`/api/prefetch?id=${vid}`).catch(() => {});
-    }
-  };
-
-  document.addEventListener('pointerenter', (e) => triggerPrefetchForElement(e.target), { capture: true, passive: true });
-  document.addEventListener('touchstart', (e) => triggerPrefetchForElement(e.target), { capture: true, passive: true });
 
   function updatePersonalizedQuickPicks() {
     const personalized = getPersonalizedQuickPicks();
@@ -702,6 +687,7 @@ function initApp() {
     const authenticGlobalTop1Fallback = {
       id: "yt-ekr2nIex040",
       videoId: "ekr2nIex040",
+      mvVideoId: "8Ebqe2Dbzls",
       title: "APT.",
       artist: "로제 (ROSÉ), Bruno Mars",
       album: "rosie",
@@ -1640,12 +1626,14 @@ function initApp() {
       return;
     }
 
-    const isMobileDrawerOpen = window.innerWidth <= 768 && 
-      document.getElementById('modal-content-panel')?.classList.contains('drawer-expanded');
+    const isMobileDrawerOpen = (window.innerWidth <= 900 && 
+      document.getElementById('modal-content-panel')?.classList.contains('drawer-expanded')) ||
+      document.body.classList.contains('drawer-expanded');
 
     const videoWrap = document.getElementById('modal-video-wrap');
     const stageMedia = document.getElementById('stage-media-wrap');
     const visualPanel = document.querySelector('.modal-visual-panel');
+    const contentPanel = document.getElementById('modal-content-panel');
 
     let rect = null;
     if (stageMedia && stageMedia.offsetHeight > 30 && stageMedia.offsetWidth > 30) {
@@ -1676,18 +1664,34 @@ function initApp() {
       top = Math.round(window.innerHeight * 0.16);
     }
 
+    // [데스크톱/태블릿 안전 영역 보장] 동영상 영역이 우측 탭 패널(다음 트랙, 가사, 관련 항목)을 침범하지 않도록 엄격 제한
+    if (contentPanel && window.innerWidth > 900) {
+      const cpRect = contentPanel.getBoundingClientRect();
+      if (cpRect.left > 100 && (left + width) > (cpRect.left - 16)) {
+        width = Math.max(240, Math.floor(cpRect.left - 16 - left));
+        height = Math.round(width * 9 / 16);
+      }
+    }
+
     persistent.style.setProperty('position', 'fixed', 'important');
     persistent.style.setProperty('top', `${top}px`, 'important');
     persistent.style.setProperty('left', `${left}px`, 'important');
     persistent.style.setProperty('width', `${width}px`, 'important');
     persistent.style.setProperty('height', `${height}px`, 'important');
     persistent.style.setProperty('transform', 'none', 'important');
-    persistent.style.setProperty('opacity', '1', 'important');
-    persistent.style.setProperty('visibility', 'visible', 'important');
-    persistent.style.setProperty('display', 'block', 'important');
-    // 모바일에서 가사/대기열 서랍이 전체 확장되었을 때는 터치가 서랍(가사 스크롤)으로 안전 전달되도록 pointer-events: none, 서랍 닫히면 auto
-    persistent.style.setProperty('pointer-events', isMobileDrawerOpen ? 'none' : 'auto', 'important');
-    persistent.style.setProperty('z-index', '950', 'important');
+    // 모바일에서 가사/대기열/관련항목 서랍이 열렸을 때는 비디오를 완전히 서랍 뒤(z-index: 30)로 숨겨 100% 가림 방지
+    if (isMobileDrawerOpen) {
+      persistent.style.setProperty('pointer-events', 'none', 'important');
+      persistent.style.setProperty('z-index', '30', 'important');
+      persistent.style.setProperty('opacity', '0', 'important');
+      persistent.style.setProperty('visibility', 'hidden', 'important');
+    } else {
+      persistent.style.setProperty('pointer-events', 'auto', 'important');
+      persistent.style.setProperty('z-index', '950', 'important');
+      persistent.style.setProperty('opacity', '1', 'important');
+      persistent.style.setProperty('visibility', 'visible', 'important');
+      persistent.style.setProperty('display', 'block', 'important');
+    }
     persistent.style.setProperty('border-radius', '12px', 'important');
   };
 
@@ -1870,6 +1874,7 @@ function initApp() {
 
   const switchMediaMode = (mode) => {
     currentMediaMode = mode;
+    player.currentMediaMode = mode;
     const btnSong = document.getElementById('btn-mode-song');
     const btnVideo = document.getElementById('btn-mode-video');
     const albumArtWrap = document.getElementById('modal-album-art-wrap');
@@ -1898,6 +1903,10 @@ function initApp() {
       setTimeout(syncVideoPosition, 150);
       setTimeout(syncVideoPosition, 300);
     } else {
+      // 제한 안내 오버레이 숨김
+      const noticeEl = document.getElementById('video-embed-notice-overlay');
+      if (noticeEl) noticeEl.style.display = 'none';
+
       if (typeof player.switchToAudioMode === 'function') {
         player.switchToAudioMode();
       }
@@ -1925,6 +1934,46 @@ function initApp() {
 
   const btnModeVideo = document.getElementById('btn-mode-video');
   if (btnModeVideo) btnModeVideo.addEventListener('click', () => switchMediaMode('video'));
+
+  // 저작권 퍼가기 제한 안내 오버레이 버튼 연동
+  const btnNoticeSong = document.getElementById('btn-notice-switch-song');
+  if (btnNoticeSong) {
+    btnNoticeSong.addEventListener('click', () => {
+      switchMediaMode('song');
+    });
+  }
+
+  const btnNoticeSearchAlt = document.getElementById('btn-notice-search-alt');
+  if (btnNoticeSearchAlt) {
+    btnNoticeSearchAlt.addEventListener('click', async () => {
+      const curTrack = player.getCurrentTrack();
+      if (!curTrack) return;
+      ui.showToast('다른 공식 무대/라이브 영상을 탐색합니다...');
+      try {
+        const query = `${curTrack.artist || ''} ${curTrack.title || ''} 무대 live`.trim();
+        const res = await searchService.searchOnline(query);
+        const list = [...(res.videos || []), ...(res.tracks || [])];
+        const alt = list.find(v => v.videoId && v.videoId !== curTrack.videoId && v.videoId !== curTrack.mvVideoId);
+        if (alt && alt.videoId) {
+          curTrack.mvVideoId = alt.videoId;
+          ui.showToast(`대체 영상 연결: ${alt.title || '라이브 영상'}`);
+          const curTime = Math.max(0, Math.floor(player.getCurrentTime() || 0));
+          if (player.ytPlayer && typeof player.ytPlayer.loadVideoById === 'function') {
+            player.ytPlayer.loadVideoById(alt.videoId, curTime);
+            try {
+              if (typeof player.ytPlayer.playVideo === 'function') player.ytPlayer.playVideo();
+            } catch (e) {}
+          }
+          const noticeEl = document.getElementById('video-embed-notice-overlay');
+          if (noticeEl) noticeEl.style.display = 'none';
+        } else {
+          ui.showToast('대체 가능한 다른 공개 영상을 찾지 못했습니다. YouTube에서 직접 시청해 주세요.');
+        }
+      } catch (err) {
+        ui.showToast('영상 탐색 중 오류가 발생했습니다.');
+      }
+    });
+  }
 
   const btnExpandPlayer = document.getElementById('btn-expand-player');
 
@@ -1966,6 +2015,8 @@ function initApp() {
     ui.dom.fullModal.classList.remove('open');
     document.body.classList.remove('player-modal-open');
     document.body.classList.remove('video-mode-active');
+    document.getElementById('modal-content-panel')?.classList.remove('drawer-expanded');
+    document.body.classList.remove('drawer-expanded');
 
     // 하단 바의 v 버튼을 ^ (chevron-up)으로 복원
     if (btnExpandPlayer) {
@@ -2077,7 +2128,8 @@ function initApp() {
   const modalContentPanel = document.getElementById('modal-content-panel');
   if (mobileDrawerHandle && modalContentPanel) {
     mobileDrawerHandle.addEventListener('click', () => {
-      modalContentPanel.classList.toggle('drawer-expanded');
+      const isExp = modalContentPanel.classList.toggle('drawer-expanded');
+      document.body.classList.toggle('drawer-expanded', isExp);
       syncVideoPosition();
     });
 
@@ -2092,9 +2144,11 @@ function initApp() {
       if (diffY > 35) {
         // 위로 스와이프 -> 확장
         modalContentPanel.classList.add('drawer-expanded');
+        document.body.classList.add('drawer-expanded');
       } else if (diffY < -35) {
         // 아래로 스와이프 -> 닫기
         modalContentPanel.classList.remove('drawer-expanded');
+        document.body.classList.remove('drawer-expanded');
       }
       syncVideoPosition();
     }, { passive: true });
@@ -2307,6 +2361,8 @@ function initApp() {
       document.querySelector('.modal-tab[data-tab="lyrics"]')?.click();
       if (window.innerWidth <= 768) {
         document.getElementById('modal-content-panel')?.classList.add('drawer-expanded');
+        document.body.classList.add('drawer-expanded');
+        syncVideoPosition();
       }
       ui.showToast('실시간 싱크 자막이 활성화되었습니다.');
       if (cur?.lyrics && cur.lyrics.length > 0) {
@@ -2543,7 +2599,34 @@ function initApp() {
     auth.openLoginModal();
   });
   document.getElementById('account-item-settings')?.addEventListener('click', () => {
-    ui.showToast('설정: 앰비언트 모드, 실시간 정밀 가사 싱크 및 MediaSession 백그라운드 재생이 활성화되어 있습니다.');
+    closeAccountDrawer();
+    const currentServer = localStorage.getItem('streamvance_stream_server') || '';
+    const newServer = prompt(
+      '💡 백그라운드 스트리밍 서버(PC IP 주소) 연동 설정:\n\n' +
+      'Cloudflare Pages(외부 호스팅) 사용 시 PC의 Streamvance 서버 IP를 입력하시면 모바일 화면 꺼짐 시에도 100% 무중단 네이티브 백그라운드 재생이 가능합니다.\n\n' +
+      '(예: http://192.168.0.122:3000 / 비워두면 자동 감지)',
+      currentServer
+    );
+    if (newServer !== null) {
+      const trimmed = newServer.trim().replace(/\/+$/, '');
+      if (trimmed) {
+        localStorage.setItem('streamvance_stream_server', trimmed);
+        player.streamServerBase = trimmed;
+        player.serverSupportsAudioStream = true;
+        ui.showToast(`스트리밍 서버 주소가 설정되었습니다: ${trimmed}`);
+      } else {
+        localStorage.removeItem('streamvance_stream_server');
+        player.streamServerBase = '';
+        const isLocal = typeof window !== 'undefined' && (
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          /^192\.168\./.test(window.location.hostname) ||
+          window.location.port === '3000'
+        );
+        player.serverSupportsAudioStream = isLocal;
+        ui.showToast('스트리밍 서버 설정이 기본값(자동 감지)으로 초기화되었습니다.');
+      }
+    }
   });
   document.getElementById('account-item-help')?.addEventListener('click', () => {
     ui.showToast('Streamvance 고객센터: 서비스 이용 및 지원 안내가 활성화되어 있습니다.');
@@ -2563,10 +2646,15 @@ function initApp() {
       const activePane = document.getElementById(`pane-${targetPane}`);
       if (activePane) activePane.classList.add('active');
 
-      // 모바일에서 탭 클릭 시 서랍 자동 오픈 및 비디오 위치 동기화 (가사/대기열 가림 방지)
-      if (window.innerWidth <= 768 && modalContentPanel) {
-        modalContentPanel.classList.add('drawer-expanded');
+      // 모바일 및 반응형 화면에서 탭 클릭 시 서랍 자동 오픈 및 비디오 위치 동기화 (가사/대기열/관련항목 가림 100% 방지)
+      if (modalContentPanel) {
+        if (window.innerWidth <= 900) {
+          modalContentPanel.classList.add('drawer-expanded');
+          document.body.classList.add('drawer-expanded');
+        }
         syncVideoPosition();
+        setTimeout(syncVideoPosition, 50);
+        setTimeout(syncVideoPosition, 150);
       }
     });
   });

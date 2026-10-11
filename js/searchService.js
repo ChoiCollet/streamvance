@@ -42,12 +42,18 @@ export class YouTubeSearchService {
 
     // [1단계] 고속 프록시 API 호출 (Cloudflare Pages Functions /api/search 또는 로컬 python server.py)
     const candidateEndpoints = ['/api/search'];
-    if (typeof window !== 'undefined' && window.location) {
-      const port = window.location.port;
-      const hostname = window.location.hostname || 'localhost';
-      if (port !== '3000' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
-        candidateEndpoints.push(`http://${hostname}:3000/api/search`);
-        candidateEndpoints.push('http://127.0.0.1:3000/api/search');
+    if (typeof window !== 'undefined') {
+      const customServer = localStorage.getItem('streamvance_stream_server');
+      if (customServer) {
+        candidateEndpoints.push(`${customServer.replace(/\/+$/, '')}/api/search`);
+      }
+      if (window.location) {
+        const port = window.location.port;
+        const hostname = window.location.hostname || 'localhost';
+        if (port !== '3000' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
+          candidateEndpoints.push(`http://${hostname}:3000/api/search`);
+          candidateEndpoints.push('http://127.0.0.1:3000/api/search');
+        }
       }
     }
 

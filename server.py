@@ -523,6 +523,15 @@ class MusicAppHandler(http.server.SimpleHTTPRequestHandler):
         # 일반 정적 파일 서빙
         return super().do_GET()
 
+    def end_headers(self):
+        # 로컬 개발 및 Wi-Fi 테스트 환경: 브라우저 캐시로 인한 구버전 노출 원천 차단
+        if not getattr(self, '_cache_control_set', False):
+            if not self.path.startswith('/api/audio-stream') and not self.path.startswith('/api/silent-stream'):
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+        super().end_headers()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')

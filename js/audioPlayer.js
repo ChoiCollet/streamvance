@@ -20,9 +20,21 @@ export class AudioPlayer {
     this.syncInterval = null;
     this.loadRetryTimer = null;
 
-    // 모바일 백그라운드 재생 핵심: 현재 트랙이 네이티브 오디오(HTML5 <audio>)로 재생 중인지 추적
+    // 호스트 환경 감지: localhost/로컬 IP 환경 또는 설정된 스트리밍 서버가 있을 때 엔드포인트 활성화
+    const isLocalHost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      /^192\.168\./.test(window.location.hostname) ||
+      /^10\./.test(window.location.hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname) ||
+      window.location.port === '3000'
+    );
+    this.streamServerBase = (typeof localStorage !== 'undefined' ? localStorage.getItem('streamvance_stream_server') : '') || '';
+    this.serverSupportsAudioStream = isLocalHost || !!this.streamServerBase;
+    this.preferNativeAudio = true; // 음원 모드에서는 상시 고품질 무중단 네이티브 오디오 우선!
     this.useNativeAudio = false;  // true = HTML5 <audio> 사용 중, false = YouTube IFrame 사용 중
-    this.preferNativeAudio = true; // 백그라운드 재생 최우선: HTML5 <audio> 우선 사용, 실패 시 IFrame 폴백
+    this.currentMediaMode = 'song'; // 'song' | 'video'
+    this._isTransitioningToVideo = false;
     this._audioUrlFetching = null; // 현재 진행 중인 오디오 URL 추출 요청 AbortController
     this._isLoadingNativeAudio = false; // 네이티브 오디오 로딩/프라이밍 진행 중 플래그
     this._loadSessionId = 0; // 비동기 응답 경합(Race Condition) 방지용 세션 카운터
@@ -53,15 +65,20 @@ export class AudioPlayer {
   initYouTubePlayer() {
     const setupYT = () => {
       if (window.YT && window.YT.Player) {
+        const pageOrigin = (typeof window !== 'undefined' && window.location) ? window.location.origin : '';
+        const pageHref = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
+
         this.ytPlayer = new window.YT.Player('youtube-player-hidden', {
           height: '200',
           width: '200',
+          host: 'https://www.youtube.com',
           playerVars: {
             autoplay: 0,
             controls: 0,
             disablekb: 1,
             enablejsapi: 1,
-            origin: window.location.origin,
+            origin: pageOrigin,
+            widget_referrer: pageHref,
             playsinline: 1,
             html5: 1,
             rel: 0,
@@ -76,13 +93,21 @@ export class AudioPlayer {
             },
             onStateChange: (event) => {
               // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0, BUFFERING = 3
-              // [핵심] 현재 네이티브 오디오 모드(HTML5 <audio>)로 재생 중이라면,
-              // 백그라운드 YouTube iframe의 모든 이벤트는 무시하고 즉시 정지 유지
+              // [핵심] 현재 네이티브 오디오 모드(HTML5 <audio>)로 재생 중이라면:
               if (this.useNativeAudio) {
-                if (event.data === 1) {
-                  try { this.ytPlayer.pauseVideo(); } catch (e) {}
+                if (this._isTransitioningToVideo && event.data === 1) {
+                  // 비디오 모드 전환 완료: 프레임이 실제로 재생되기 시작하면 네이티브 오디오를 정지하여 묵음 0초 실현
+                  this._isTransitioningToVideo = false;
+                  this.useNativeAudio = false;
+                  if (this.audio && !this.audio.paused) {
+                    try { this.audio.pause(); } catch (e) {}
+                  }
+                } else {
+                  if (event.data === 1 && !this._isTransitioningToVideo) {
+                    try { this.ytPlayer.pauseVideo(); } catch (e) {}
+                  }
+                  return;
                 }
-                return;
               }
 
               if (event.data === 1) {
@@ -90,12 +115,16 @@ export class AudioPlayer {
                 this.isUserPaused = false;
                 this.ensureAudioSound();
 
-                // 목표 동기화 시간 검증 및 보정 (처음 0:00으로 튀는 현상 방어)
+                // 비디오 정상 재생 시 임베드 제한 안내 오버레이 숨김
+                const noticeEl = document.getElementById('video-embed-notice-overlay');
+                if (noticeEl) noticeEl.style.display = 'none';
+
+                // 목표 동기화 시간 검증 및 보정 (미세 차이로 인한 1초 뒤로 점프 현상 방지: 2.5초 이상 편차 시만 보정)
                 if (this._targetSyncTime !== undefined && this._targetSyncTime > 1) {
                   const target = this._targetSyncTime;
                   this._targetSyncTime = undefined;
                   const current = (typeof this.ytPlayer.getCurrentTime === 'function') ? this.ytPlayer.getCurrentTime() : 0;
-                  if (current < target - 1.5 || current > target + 2.5) {
+                  if (current < target - 2.5 || current > target + 3.0) {
                     try { this.ytPlayer.seekTo(target, true); } catch (e) {}
                   }
                 }
@@ -149,50 +178,21 @@ export class AudioPlayer {
             },
             onError: (err) => {
               console.warn("YouTube Playback Error:", err);
-              // 네이티브 오디오 모드에서는 YouTube IFrame 오류로 인한 곡 넘김을 절대 실행하지 않음
-              if (this.useNativeAudio) return;
+              // 네이티브 오디오 단독 재생 중일 때만 유튜브 오류 무시 (비디오 전환 중일 때는 오류를 정상 핸들링!)
+              if (this.useNativeAudio && !this._isTransitioningToVideo) return;
 
               const errorCode = err?.data !== undefined ? err.data : err;
-              // 101, 150: 퍼가기 제한 영상 (외부 사이트 임베드 차단 - "시청할 수 없는 동영상입니다")
+              // 101, 150, 152: 퍼가기 제한 영상 (외부 사이트 임베드 차단 - "시청할 수 없는 동영상입니다")
               // 100, 105: 영상 오류/삭제/비공개
-              if (errorCode === 101 || errorCode === 150 || errorCode === 100 || errorCode === 105) {
-                console.log("[AudioPlayer] Embed restricted video detected (code " + errorCode + "). Searching for official MV alternative...");
+              // 2: 잘못된 매개변수
+              if (errorCode === 101 || errorCode === 150 || errorCode === 152 || errorCode === 100 || errorCode === 105 || errorCode === 2) {
+                console.log("[AudioPlayer] Embed restricted video detected (code " + errorCode + "). Handling gracefully without interrupting playback...");
                 const curTrack = this.getCurrentTrack();
-                const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
+                const curTime = Math.max(0, this.getCurrentTime() || 0);
 
-                if (curTrack && !curTrack._mvSearched) {
-                  curTrack._mvSearched = true;
-                  const query = `${curTrack.artist || ''} ${curTrack.title || ''} MV`.trim();
-                  fetch(`/api/search?q=${encodeURIComponent(query)}`)
-                    .then(res => res.json())
-                    .then(data => {
-                      const list = [...(data.songs || []), ...(data.tracks || []), ...(data.videos || [])];
-                      const candidate = list.find(v => v.videoId && v.videoId !== curTrack.videoId);
-                      if (candidate && candidate.videoId) {
-                        console.log("[AudioPlayer] Switching to alternative MV videoId:", candidate.videoId);
-                        curTrack.mvVideoId = candidate.videoId;
-                        if (typeof window !== 'undefined' && window.ui?.showToast) {
-                          window.ui.showToast('공식 뮤직비디오 영상으로 자동 연결했습니다.');
-                        }
-                        if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
-                          this.ytPlayer.loadVideoById(candidate.videoId, curTime);
-                          try {
-                            if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
-                            if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
-                            if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
-                          } catch (pe) {}
-                          return;
-                        }
-                      }
-                      this._fallbackToAudioMode();
-                    })
-                    .catch(() => {
-                      this._fallbackToAudioMode();
-                    });
-                  return;
+                if (curTrack) {
+                  this._handleEmbedRestrictedVideo(curTrack, curTime);
                 }
-
-                this._fallbackToAudioMode();
                 return;
               }
 
@@ -228,7 +228,7 @@ export class AudioPlayer {
   }
 
   initHTML5AudioListeners() {
-    this.audio.volume = this.volume;
+    this.audio.volume = this.isMuted ? 0 : Math.min(1, this.volume * 0.78);
 
     this.audio.addEventListener('play', () => {
       if (this.isCurrentLocal()) {
@@ -449,6 +449,26 @@ export class AudioPlayer {
       const handleBackgroundTransition = () => {
         if (this.isPlaying && !this.isUserPaused) {
           this.startBgKeepAlive();
+
+          // [혁신 기능] 사용자가 동영상 모드로 보다가 홈 화면으로 가거나 화면을 끄는 경우(background):
+          // 모바일 브라우저가 비디오 iframe을 강제 일시정지시키므로,
+          // 로컬/스트림 서버 환경에서는 0초 만에 백그라운드 안전 네이티브 오디오로 자동 핸드오프!
+          if (document.visibilityState === 'hidden' && this.currentMediaMode === 'video' && !this.useNativeAudio && this.serverSupportsAudioStream) {
+            const curTrack = this.getCurrentTrack();
+            if (curTrack && curTrack.videoId) {
+              const curTime = Math.max(0, this.getCurrentTime() || 0);
+              console.log("[BackgroundPlay] Video tab hidden/locked. Handoff to native audio at", curTime);
+              this._bgVideoHandoff = true;
+              this.useNativeAudio = true;
+              this._loadNativeAudio(curTrack, true, this._loadSessionId, curTime, () => {
+                if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+                  try { this.ytPlayer.pauseVideo(); } catch (e) {}
+                }
+              });
+              return;
+            }
+          }
+
           this.forceResumePlayback();
         }
       };
@@ -458,8 +478,15 @@ export class AudioPlayer {
       window.addEventListener('blur', handleBackgroundTransition, true);
       window.addEventListener('focus', () => {
         if (this.isPlaying && !this.isUserPaused) {
-          this.syncMediaSessionPlaybackState();
-          this.forceResumePlayback();
+          if (this._bgVideoHandoff && this.currentMediaMode === 'video') {
+            this._bgVideoHandoff = false;
+            const curTime = Math.max(0, this.getCurrentTime() || 0);
+            console.log("[BackgroundPlay] Returned to app: Restoring video from native audio at", curTime);
+            this.switchToVideoMode();
+          } else {
+            this.syncMediaSessionPlaybackState();
+            this.forceResumePlayback();
+          }
         }
       });
     }
@@ -830,21 +857,14 @@ export class AudioPlayer {
       this.loadRetryTimer = null;
     }
 
+    // 제한 안내 오버레이 초기화
+    const noticeEl = document.getElementById('video-embed-notice-overlay');
+    if (noticeEl) noticeEl.style.display = 'none';
+
     // 양쪽 정지 후 로드
     this.audio.pause();
-    // [핵심] 네이티브 오디오를 우선 사용할 경우, 로딩 초기부터 useNativeAudio=true로 두어
-    // 터치 언락이나 백그라운드 워커 펄스로 인한 YouTube iframe 개입을 원천 방어!
-    if (this.preferNativeAudio || track.audioUrl) {
-      this.useNativeAudio = true;
-      if (this.ytPlayer) {
-        try {
-          if (typeof this.ytPlayer.stopVideo === 'function') this.ytPlayer.stopVideo();
-          else if (typeof this.ytPlayer.pauseVideo === 'function') this.ytPlayer.pauseVideo();
-        } catch (e) {}
-      }
-    } else {
-      this.useNativeAudio = false;
-    }
+    this._loadSessionId = (this._loadSessionId || 0) + 1;
+    const currentSessionId = this._loadSessionId;
 
     if (autoPlay) {
       this.isPlaying = true;
@@ -853,17 +873,26 @@ export class AudioPlayer {
       this.ensureAudioSound();
     }
 
-    this._loadSessionId = (this._loadSessionId || 0) + 1;
-    const currentSessionId = this._loadSessionId;
-
     if (track.videoId) {
-      // =====================================================================
-      // 백그라운드 재생 핵심: HTML5 Native Audio 모드 최우선 시도
-      // (모바일 크롬, 삼성인터넷, 데스크톱 백그라운드 탭 100% 무중단 지원)
-      // =====================================================================
-      if (this.preferNativeAudio) {
+      // 1) 동영상 모드인 경우: YouTube IFrame으로 영상 직접 로드
+      if (this.currentMediaMode === 'video') {
+        this.useNativeAudio = false;
+        this._loadYouTubeIFrame(track, autoPlay);
+      }
+      // 2) 음원(Song) 모드이고 서버 스트림 지원 시: HTML5 Native Audio (모바일 백그라운드 무중단 100% 재생)
+      else if (this.preferNativeAudio && this.serverSupportsAudioStream) {
+        this.useNativeAudio = true;
+        if (this.ytPlayer) {
+          try {
+            if (typeof this.ytPlayer.stopVideo === 'function') this.ytPlayer.stopVideo();
+            else if (typeof this.ytPlayer.pauseVideo === 'function') this.ytPlayer.pauseVideo();
+          } catch (e) {}
+        }
         this._loadNativeAudio(track, autoPlay, currentSessionId);
-      } else {
+      }
+      // 3) 음원 모드이지만 스트림 서버 미지원 환경 (Cloudflare Pages 등): YouTube IFrame 로드
+      else {
+        this.useNativeAudio = false;
         this._loadYouTubeIFrame(track, autoPlay);
       }
     } else if (track.audioUrl) {
@@ -889,14 +918,9 @@ export class AudioPlayer {
   }
 
   // 서버 프록시를 통한 네이티브 HTML5 오디오 고속 로드 (대기 시간 0초 단축)
-  async _loadNativeAudio(track, autoPlay, sessionId) {
+  async _loadNativeAudio(track, autoPlay, sessionId, startTime = 0, onPlaySuccess = null) {
     const videoId = track.videoId;
     if (!videoId) return;
-
-    // YouTube IFrame 정지
-    if (this.ytPlayer && this.ytPlayer.stopVideo) {
-      try { this.ytPlayer.stopVideo(); } catch (e) {}
-    }
 
     if (this._audioUrlFetching) {
       try { this._audioUrlFetching.abort(); } catch (e) {}
@@ -908,11 +932,17 @@ export class AudioPlayer {
 
     // [고속 전환] /api/audio-url 사전 질의 대기 없이 곧바로 프록시 스트림 URL 설정
     // Range 헤더와 실시간 파이프라인으로 첫 번째 청크가 도착하는 즉시 재생 시작
-    const streamProxyUrl = `/api/audio-stream?id=${encodeURIComponent(videoId)}`;
+    const streamBase = this.streamServerBase || '';
+    const streamProxyUrl = `${streamBase}/api/audio-stream?id=${encodeURIComponent(videoId)}`;
     this.audio.loop = false;
     this.audio.src = streamProxyUrl;
-    this.audio.currentTime = 0;
-    this.audio.volume = this.isMuted ? 0 : this.volume;
+    if (startTime > 0) {
+      this.audio.currentTime = startTime;
+    } else {
+      this.audio.currentTime = 0;
+    }
+    // [음량 밸런스 최적화] 유튜브 IFrame의 Loudness Normalization(-14 LUFS)과 완벽 일치하도록 0.78 레벨링
+    this.audio.volume = this.isMuted ? 0 : Math.min(1, this.volume * 0.78);
 
     if (autoPlay) {
       this.isPlaying = true;
@@ -925,6 +955,14 @@ export class AudioPlayer {
         await this.audio.play();
         if (this._loadSessionId !== sessionId) return;
         this._isLoadingNativeAudio = false;
+
+        // 콜백이 제공된 경우(예: 비디오에서 오디오로 무중단 전환) 성공 즉시 실행
+        if (typeof onPlaySuccess === 'function') {
+          onPlaySuccess();
+        } else if (this.ytPlayer && this.ytPlayer.stopVideo && !this._isTransitioningToVideo) {
+          try { this.ytPlayer.stopVideo(); } catch (e) {}
+        }
+
         console.log(`[BackgroundPlay] High-speed native audio stream playing: ${track.title}`);
         this._prefetchNextTrackAudio();
       } catch (playErr) {
@@ -939,8 +977,9 @@ export class AudioPlayer {
     }
   }
 
-  // 다음/이전 곡 오디오 URL 및 대기열 선제적 다중 캐싱 (곡 변경 시 0ms 즉각 전환)
+  // 다음/이전 곡 오디오 URL 및 대기열 선제적 다중 캐싱 (로컬 서버 환경 전용)
   _prefetchNextTrackAudio() {
+    if (!this.serverSupportsAudioStream) return;
     if (!this.queue || this.queue.length === 0 || this.currentIndex < 0) return;
     const vids = [];
     for (let i = 1; i <= 4; i++) {
@@ -957,15 +996,112 @@ export class AudioPlayer {
     }
   }
 
-  // 음원 모드 폴백 헬퍼 (퍼가기 제한 영상 대응)
-  _fallbackToAudioMode() {
-    if (typeof window !== 'undefined' && window.ui && typeof window.ui.showToast === 'function') {
-      window.ui.showToast('해당 곡은 저작권 정책으로 영상 재생이 제한되어 고음질 음원으로 재생합니다.');
+  // 저작권 퍼가기 제한 영상 (코드 150/101/152) 지능형 처리 및 공식 영상 우회
+  _handleEmbedRestrictedVideo(curTrack, curTime) {
+    if (!curTrack) return;
+
+    // 만약 이미 지정된 우회 MV VideoId가 있는 경우 (예: APT -> 8Ebqe2Dbzls)
+    if (curTrack.mvVideoId && curTrack.mvVideoId !== curTrack.videoId && !curTrack._triedPresetMv) {
+      curTrack._triedPresetMv = true;
+      console.log("[AudioPlayer] Using preset alternative mvVideoId:", curTrack.mvVideoId);
+      if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
+        this.ytPlayer.loadVideoById(curTrack.mvVideoId, curTime);
+        this.ensureAudioSound();
+        try {
+          if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+          if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+          if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+        } catch (pe) {}
+        return;
+      }
     }
-    if (typeof window !== 'undefined' && typeof window.switchMediaMode === 'function') {
-      window.switchMediaMode('song');
-    } else {
-      this.switchToAudioMode();
+
+    // 1단계: 공식 MV / Lyric Video 대체 영상 자동 탐색 (아직 탐색하지 않은 경우)
+    if (!curTrack._mvSearched) {
+      curTrack._mvSearched = true;
+      const cleanTitle = (curTrack.title || '').replace(/\(.*\)|\[.*\]/g, '').trim();
+      const cleanArtist = (curTrack.artist || '').split(/[,&feat\.]/i)[0].trim();
+      const query = `${cleanArtist} ${cleanTitle}`.trim();
+
+      const searchPromise = (typeof window !== 'undefined' && window.searchService && typeof window.searchService.searchOnline === 'function')
+        ? window.searchService.searchOnline(query)
+        : fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).catch(() => null);
+
+      Promise.resolve(searchPromise).then(data => {
+        if (!data) {
+          this._showEmbedRestrictedNotice(curTrack, curTime);
+          return;
+        }
+        const list = [...(data.songs || []), ...(data.tracks || []), ...(data.videos || [])];
+        const titleKeywords = cleanTitle.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+
+        const validCandidates = list.filter(v => {
+          if (!v.videoId || v.videoId === curTrack.videoId || v.isCompilation) return false;
+          const vt = (v.title || '').toLowerCase();
+          // [엄격 검증] 동일 곡의 제목 키워드가 반드시 포함되어야 함 (엉뚱한 곡 매칭 원천 방지)
+          if (titleKeywords.length > 0 && !titleKeywords.some(kw => vt.includes(kw))) {
+            return false;
+          }
+          return true;
+        });
+
+        // 1순위: 공식 MV, Lyric Video, Official Video
+        const candidate = validCandidates.find(v => {
+          const t = (v.title || '').toLowerCase();
+          return t.includes('official') || t.includes('m/v') || t.includes('mv') || t.includes('lyric');
+        }) || validCandidates.find(v => {
+          const a = (v.artist || '').toLowerCase();
+          return a && cleanArtist && (a.includes(cleanArtist.toLowerCase()) || cleanArtist.toLowerCase().includes(a));
+        }) || validCandidates[0];
+
+        if (candidate && candidate.videoId) {
+          console.log("[AudioPlayer] Switching to alternative playable videoId:", candidate.videoId, candidate.title);
+          curTrack.mvVideoId = candidate.videoId;
+          if (typeof window !== 'undefined' && window.ui?.showToast) {
+            window.ui.showToast(`공식 영상으로 자동 우회 연결했습니다.`);
+          }
+          if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
+            this.ytPlayer.loadVideoById(candidate.videoId, curTime);
+            this.ensureAudioSound();
+            try {
+              if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+              if (typeof this.ytPlayer.setVolume === 'function') this.ytPlayer.setVolume(this.volume * 100);
+              if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+            } catch (pe) {}
+            return;
+          }
+        }
+        this._showEmbedRestrictedNotice(curTrack, curTime);
+      }).catch(() => {
+        this._showEmbedRestrictedNotice(curTrack, curTime);
+      });
+      return;
+    }
+
+    // 2단계: 대체 영상도 없거나 이미 탐색한 경우 -> 음악 중단 없이 안내 오버레이 노출
+    this._showEmbedRestrictedNotice(curTrack, curTime);
+  }
+
+  // 제한 영상 안내 오버레이 표시 및 음원 무중단 연속 재생 보장
+  _showEmbedRestrictedNotice(curTrack, curTime) {
+    // 1. 음악 재생 절대 끊지 않음: 네이티브 오디오가 재생 가능한 환경이면 즉시 음원 연속 재생
+    if (this.serverSupportsAudioStream && !this.useNativeAudio) {
+      this.useNativeAudio = true;
+      this._loadNativeAudio(curTrack, true, this._loadSessionId, curTime);
+    }
+
+    // 2. 비디오 스테이지에 우아한 알림 오버레이 표시
+    const noticeEl = document.getElementById('video-embed-notice-overlay');
+    if (noticeEl) {
+      noticeEl.style.display = 'flex';
+      const openYtBtn = document.getElementById('btn-notice-open-yt');
+      if (openYtBtn && curTrack.videoId) {
+        openYtBtn.href = `https://www.youtube.com/watch?v=${curTrack.videoId}`;
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.ui && typeof window.ui.showToast === 'function') {
+      window.ui.showToast('외부 재생이 제한된 영상이지만 음악은 끊김 없이 계속 재생됩니다.');
     }
   }
 
@@ -974,22 +1110,35 @@ export class AudioPlayer {
     const track = this.getCurrentTrack();
     if (!track || !track.videoId) return;
 
-    // 공식 MV 대체 ID가 발견된 경우 해당 MV로 우선 연결
-    const targetVid = track.mvVideoId || track.videoId;
-    const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
-    this.preferNativeAudio = false;
-    this.useNativeAudio = false;
-    this._targetSyncTime = curTime;
-    this._isSwitchingMediaMode = true;
+    this.currentMediaMode = 'video';
+    const curTime = Math.max(0, this.getCurrentTime() || 0);
 
-    // HTML5 네이티브 오디오 안전 정지
-    if (this.audio) {
-      try { this.audio.pause(); } catch (e) {}
+    // 제한 안내 오버레이 초기화
+    const noticeEl = document.getElementById('video-embed-notice-overlay');
+    if (noticeEl) noticeEl.style.display = 'none';
+
+    // 1) 이미 YouTube IFrame으로 재생 중인 경우 (Cloudflare Pages 환경 포함):
+    // 영상을 다시 로드하지 않고 그대로 연속 재생! 시점 0:00 초기화 및 버퍼링 없음!
+    if (!this.useNativeAudio && this.ytPlayer && this.isYTReady) {
+      this.isPlaying = true;
+      this.isUserPaused = false;
+      try {
+        if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
+        if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
+      } catch (e) {}
+      this.syncMediaSessionPlaybackState();
+      return;
     }
+
+    // 2) HTML5 네이티브 오디오 모드에서 전환하는 경우:
+    // [무중단 원칙] YouTube 영상이 실제로 재생(PLAYING)될 때까지
+    // 네이티브 오디오를 즉시 끄지 않고 연속 재생 유지! 묵음 및 음악 끊김 0초!
+    const targetVid = track.mvVideoId || track.videoId;
+    this._targetSyncTime = curTime;
+    this._isTransitioningToVideo = true;
 
     if (this.ytPlayer && this.isYTReady && typeof this.ytPlayer.loadVideoById === 'function') {
       try {
-        // YouTube IFrame API 표준 규격: loadVideoById(videoId, startSeconds)
         this.ytPlayer.loadVideoById(targetVid, curTime);
         this.ensureAudioSound();
         try {
@@ -1017,7 +1166,7 @@ export class AudioPlayer {
 
     setTimeout(() => {
       this._isSwitchingMediaMode = false;
-    }, 1200);
+    }, 600);
   }
 
   // 오디오 모드로 복귀 (HTML5 Native Audio 활성화 및 재생 시점 동기화)
@@ -1025,27 +1174,48 @@ export class AudioPlayer {
     const track = this.getCurrentTrack();
     if (!track || !track.videoId) return;
 
-    const curTime = Math.max(0, Math.floor(this.getCurrentTime() || 0));
-    this.preferNativeAudio = true;
-    this.useNativeAudio = true;
+    this.currentMediaMode = 'song';
+    this._isTransitioningToVideo = false;
 
-    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
-      try { this.ytPlayer.pauseVideo(); } catch (e) {}
+    // 제한 안내 오버레이 초기화
+    const noticeEl = document.getElementById('video-embed-notice-overlay');
+    if (noticeEl) noticeEl.style.display = 'none';
+
+    // 1) 이미 네이티브 오디오로 재생 중인 경우:
+    if (this.useNativeAudio) {
+      if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+        try { this.ytPlayer.pauseVideo(); } catch (e) {}
+      }
+      return;
     }
 
-    this._loadNativeAudio(track, true, this._loadSessionId).then(() => {
-      if (curTime > 0) {
-        this.seekTo(curTime);
+    // 2) 서버 스트림 프록시가 없는 환경(정적 Cloudflare Pages 등):
+    // YouTube IFrame이 이미 끊김 없이 재생 중이므로 소리를 끄지 않고 연속 재생 유지!
+    if (!this.serverSupportsAudioStream) {
+      return;
+    }
+
+    // 3) 로컬 서버 환경: HTML5 audio로 시점 무중단 복귀
+    // [무중단 원칙] 비디오를 미리 일시정지하지 않고 계속 들려주다가,
+    // 새 오디오 스트림이 실제로 재생을 시작하는 순간(0ms 딜레이) 비디오를 멈춘다! (묵음 0초, 시간 되감김 0초!)
+    const curTime = Math.max(0, this.getCurrentTime() || 0);
+    this._loadSessionId = (this._loadSessionId || 0) + 1;
+    const sessId = this._loadSessionId;
+
+    this._loadNativeAudio(track, true, sessId, curTime, () => {
+      if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+        try { this.ytPlayer.pauseVideo(); } catch (e) {}
       }
-    }).catch(() => {});
+    });
   }
 
   // YouTube IFrame API를 통한 로드 (데스크톱 / 비디오 모드 / 폴백)
   _loadYouTubeIFrame(track, autoPlay) {
     this.useNativeAudio = false;
+    const targetVid = (this.currentMediaMode === 'video' && track.mvVideoId) ? track.mvVideoId : track.videoId;
     if (this.ytPlayer && this.isYTReady && this.ytPlayer.loadVideoById) {
       if (autoPlay) {
-        this.ytPlayer.loadVideoById(track.videoId);
+        this.ytPlayer.loadVideoById(targetVid);
         this.ensureAudioSound();
         try {
           if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
@@ -1053,7 +1223,7 @@ export class AudioPlayer {
           if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
         } catch (pe) {}
       } else {
-        this.ytPlayer.cueVideoById(track.videoId);
+        this.ytPlayer.cueVideoById(targetVid);
       }
     } else {
       // 아직 YT가 준비되지 않았을 경우 대기 후 재시도
@@ -1062,7 +1232,7 @@ export class AudioPlayer {
           clearInterval(this.loadRetryTimer);
           this.loadRetryTimer = null;
           if (autoPlay) {
-            this.ytPlayer.loadVideoById(track.videoId);
+            this.ytPlayer.loadVideoById(targetVid);
             this.ensureAudioSound();
             try {
               if (typeof this.ytPlayer.unMute === 'function') this.ytPlayer.unMute();
@@ -1070,7 +1240,7 @@ export class AudioPlayer {
               if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
             } catch (pe) {}
           } else {
-            this.ytPlayer.cueVideoById(track.videoId);
+            this.ytPlayer.cueVideoById(targetVid);
           }
         }
       }, 150);
@@ -1284,7 +1454,8 @@ export class AudioPlayer {
 
   setVolume(val) {
     this.volume = Math.max(0, Math.min(1, val));
-    this.audio.volume = this.volume;
+    // 음량 밸런스: 원본 네이티브 오디오와 유튜브 IFrame의 Loudness Normalization 음량 일치
+    this.audio.volume = this.isMuted ? 0 : Math.min(1, this.volume * 0.78);
 
     if (this.ytPlayer && this.ytPlayer.setVolume) {
       this.ytPlayer.setVolume(this.volume * 100);

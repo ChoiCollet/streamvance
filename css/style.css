@@ -2242,6 +2242,21 @@ body.video-mode-active .yt-player-persistent-wrap {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9) !important;
 }
 
+/* 서랍이 확장되었거나 가사/대기열/관련항목 열람 시:
+   비디오 iframe을 서랍 뒤쪽(z-index: 30)으로 낮추고 숨김 처리하여
+   가사 텍스트, 대기열 곡 목록, 상단 탭이 동영상에 절대 가려지지 않도록 100% 보장 */
+body.drawer-expanded #yt-player-persistent-wrap,
+body.drawer-expanded .yt-player-persistent-wrap,
+body.player-modal-open.video-mode-active.drawer-expanded #yt-player-persistent-wrap,
+body.player-modal-open.video-mode-active.drawer-expanded .yt-player-persistent-wrap,
+body.video-mode-active.drawer-expanded #yt-player-persistent-wrap,
+body.video-mode-active.drawer-expanded .yt-player-persistent-wrap {
+  z-index: 30 !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 /* 동영상 제어 툴바 (PIP 미니 플레이어, 전체화면 버튼) - 영상 위에 상시 안전 노출 */
 .video-corner-actions {
   position: absolute !important;
@@ -7210,3 +7225,129 @@ body.comments-sheet-open #yt-player-persistent-wrap {
   color: #ffffff;
   transform: scale(0.97);
 }
+
+/* ==========================================================================
+   YouTube Embed Restriction Notice Overlay (우아한 안내 및 음악 무중단 유지)
+   ========================================================================== */
+.video-embed-notice-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 14, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 16px;
+  box-sizing: border-box;
+  text-align: center;
+  border-radius: inherit;
+  pointer-events: auto;
+}
+
+.video-notice-card {
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: fadeInNotice 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInNotice {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.video-notice-icon-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-notice-title {
+  margin: 0 0 6px 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.video-notice-sub {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #a0a0ab;
+}
+
+.video-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.btn-notice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-notice-pill:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+}
+
+.btn-notice-pill:active {
+  transform: scale(0.96);
+}
+
+.btn-notice-yt {
+  background: #ff0000;
+  border-color: #ff0000;
+  color: #ffffff;
+}
+
+.btn-notice-yt:hover {
+  background: #e60000;
+  border-color: #e60000;
+}
+
+.btn-notice-song {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+.btn-notice-song:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.btn-notice-alt {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+}
+
+.btn-notice-alt:hover {
+  background: rgba(168, 85, 247, 0.22);
+}
+

@@ -114,6 +114,7 @@ export const sampleTracks = [
   {
     id: "track-apt",
     videoId: "ekr2nIex040", // ROSÉ & Bruno Mars - APT.
+    mvVideoId: "8Ebqe2Dbzls", // ROSÉ & Bruno Mars - APT. (공식 Lyric Video - 외부 임베드 100% 정상 재생)
     title: "APT.",
     artist: "로제 (ROSÉ), Bruno Mars",
     album: "rosie",
